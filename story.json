@@ -1,20 +1,19 @@
 {
     "story": {
-        "meta": {
-            "story_id": "1",
-            "name": "雾城摄影师"
-        },
+        "id": "1",
+        "title": "雾城摄影师",
         "chapters": [
             {
-                "meta": {
-                    "chapter_index": 0,
-                    "chapter_title": "雾中路口"
-                },
+                "chapter_index": 0,
+                "chapter_title": "雾中路口",
                 "paragraphs": [
                     {
+                        "paragraph_index": 0,
+                        "paragraph_title": "躲雨开机",
+                        "summary": "在一个雾气弥漫的雨夜，主角简北在高架下的避雨角，从包中取出他那台老旧但维护精良的MiniDV摄像机，并开始一系列专业而带有仪式感的开机检查流程。",
+                        "start10": "高架雨丝像噪点直落",
+                        "end10": "掰正，放弃。",
                         "meta": {
-                            "paragraph_index": 0,
-                            "paragraph_title": "躲雨开机",
                             "char_count": 1282,
                             "sid_score": 0.45,
                             "template_used": "标准",

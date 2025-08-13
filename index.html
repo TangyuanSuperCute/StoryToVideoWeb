@@ -5,206 +5,90 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MDN | MaoDie Nebula 故事创作工具</title>
     <link rel="stylesheet" href="styles.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
     <nav class="navbar">
         <div class="nav-container">
             <div class="nav-logo">
-                <div class="brand">
-                    <div class="brand-badge">
-                        <span class="brand-badge-scan"></span>
-                        <span class="brand-badge-text">MDN</span>
+                <a href="index.html" class="logo-link">
+                    <div class="brand">
+                        <div class="brand-badge">
+                            <span class="brand-badge-scan"></span>
+                            <span class="brand-badge-text">MDN</span>
+                        </div>
+                        <div class="brand-text">
+                            <div class="brand-title">MaoDie Nebula</div>
+                            <div class="brand-caption">Story Studio</div>
+                        </div>
                     </div>
-                    <div class="brand-text">
-                        <div class="brand-title">MaoDie Nebula</div>
-                        <div class="brand-caption">Story Studio</div>
-                    </div>
-                </div>
+                </a>
             </div>
         </div>
     </nav>
 
-    <main class="app">
-        <div class="app-container">
-            <aside class="sidebar">
-                <div class="sidebar-header">
-                    <h3>目录</h3>
-                    <input id="treeSearch" class="tree-search" placeholder="搜索..." />
+    <header class="hero">
+        <div class="hero-container">
+            <div class="hero-text">
+                <h1 class="hero-title">将想法变为<span class="gradient-text">视觉故事</span></h1>
+                <p class="hero-description">利用AI驱动的创作工具，将您的文本故事一键拆解为详细的分镜脚本，无缝衔接专业影视制作流程。</p>
+                <div class="hero-buttons">
+                    <a href="#creation" class="btn btn-primary">开始创作</a>
+                    <a href="editor.html" class="btn btn-secondary">直接编辑</a>
                 </div>
-                <div id="shotTree" class="tree"></div>
-            </aside>
-
-            <section class="editor" id="editor">
-                <div class="editor-empty" id="editorEmpty">
-                    <i class="fas fa-clapperboard"></i>
-                    <p>请先导入JSON或加载示例，然后在左侧选择一个分镜进行编辑</p>
-                </div>
-
-                    <div class="editor-panel hidden" id="editorPanel">
-                    <div class="editor-header">
-                            <h2 id="editorTitle">小节标题</h2>
-                        <div class="editor-meta-badges" id="metaBadges"></div>
+            </div>
+            <div class="hero-image">
+                <div class="flow-diagram">
+                    <div class="flow-card">
+                        <i class="fas fa-file-alt"></i>
+                        <h3>故事剧本</h3>
                     </div>
-
-                    <div class="editor-content">
-                        <!-- 主要画面操作区域 -->
-                        <div class="main-canvas-section">
-                            <div class="canvas-header">
-                                <h3><i class="fas fa-image"></i> 小节画面</h3>
-                                <div class="canvas-tools">
-                                    <button class="tool-btn" title="上传图片"><i class="fas fa-upload"></i></button>
-                                    <button class="tool-btn" title="清除"><i class="fas fa-trash"></i></button>
-                                </div>
-                            </div>
-                            <div class="canvas-area" id="panelSlots">
-                                <!-- 大画布区域 -->
-                                <div class="canvas-placeholder">
-                                    <i class="fas fa-cloud-upload-alt"></i>
-                                    <p>拖拽图片到此处或点击上传</p>
-                                    <input type="file" accept="image/*" multiple style="display: none;" id="canvasFileInput">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 信息面板区域 -->
-                        <div class="info-panels">
-                                            <!-- 核心信息 -->
-                <div class="info-section core-info">
-                    <h3 class="section-title">核心信息</h3>
-                                <div class="info-blocks">
-                                    <div class="info-block">
-                                        <h4><i class="fas fa-bullseye"></i> 镜头意图</h4>
-                                        <div id="intentText" class="text-block"></div>
-                                    </div>
-                                    <div class="info-block">
-                                        <h4><i class="fas fa-file-alt"></i> 改编文本</h4>
-                                        <div id="adaptedText" class="text-block"></div>
-                                    </div>
-                                </div>
-                            </div>
-
-                                            <!-- 视觉元信息 -->
-                <div class="info-section visual-meta">
-                    <h3 class="section-title">视觉</h3>
-                                <div class="meta-grid-compact">
-                                    <div class="meta-group">
-                                        <h5><i class="fas fa-masks-theater"></i> 角色</h5>
-                                        <ul id="metaCharacters" class="meta-list compact"></ul>
-                                    </div>
-                                    <div class="meta-group">
-                                        <h5><i class="fas fa-location-dot"></i> 地点</h5>
-                                        <ul id="metaLocation" class="meta-list compact"></ul>
-                                    </div>
-                                    <div class="meta-group">
-                                        <h5><i class="fas fa-box"></i> 道具</h5>
-                                        <ul id="metaProps" class="meta-list compact"></ul>
-                                    </div>
-                                    <div class="meta-group">
-                                        <h5><i class="fas fa-star"></i> 视觉要点</h5>
-                                        <ul id="metaVisuals" class="meta-list compact"></ul>
-                                    </div>
-                                </div>
-                            </div>
-
-                                            <!-- 音频元信息 -->
-                <div class="info-section audio-meta">
-                    <h3 class="section-title">音频</h3>
-                                <div class="meta-grid-compact">
-                                    <div class="meta-group">
-                                        <h5><i class="fas fa-microphone"></i> 旁白</h5>
-                                        <ul id="metaNarration" class="meta-list compact"></ul>
-                                    </div>
-                                    <div class="meta-group">
-                                        <h5><i class="fas fa-comments"></i> 对白</h5>
-                                        <ul id="metaDialogues" class="meta-list compact"></ul>
-                                    </div>
-                                    <div class="meta-group">
-                                        <h5><i class="fas fa-music"></i> 音效</h5>
-                                        <ul id="metaSfx" class="meta-list compact"></ul>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                    <div class="flow-arrow">
+                        <i class="fas fa-arrow-right"></i>
+                    </div>
+                    <div class="flow-card">
+                        <i class="fas fa-wand-magic-sparkles"></i>
+                        <h3>AI 拆解</h3>
+                    </div>
+                    <div class="flow-arrow">
+                        <i class="fas fa-arrow-right"></i>
+                    </div>
+                    <div class="flow-card">
+                        <i class="fas fa-clapperboard"></i>
+                        <h3>分镜预览</h3>
                     </div>
                 </div>
-            </section>
-
-            <aside class="meta-aside" id="metaAside">
-                <div class="meta-aside-inner">
-                    <h3>全局元信息</h3>
-                    <div class="entities-grid">
-                        <div>
-                            <h4><i class="fas fa-user"></i> 人物 <span id="asideCountCharacters" class="count-badge">0</span></h4>
-                            <ul id="asideCharacters" class="meta-list"></ul>
-                        </div>
-                        <div>
-                            <h4><i class="fas fa-location-dot"></i> 地点 <span id="asideCountLocations" class="count-badge">0</span></h4>
-                            <ul id="asideLocations" class="meta-list"></ul>
-                        </div>
-                        <div>
-                            <h4><i class="fas fa-box"></i> 道具 <span id="asideCountProps" class="count-badge">0</span></h4>
-                            <ul id="asideProps" class="meta-list"></ul>
-                        </div>
-                    </div>
-                </div>
-            </aside>
+            </div>
         </div>
+    </header>
+
+    <main>
+        <section id="creation" class="story-creation-section">
+            <div class="container">
+                <h2 class="section-title">开始您的故事创作</h2>
+                <div class="creation-panel">
+                    <div class="form-group">
+                        <label for="storyInput">故事原文</label>
+                        <textarea id="storyInput" placeholder="在此处粘贴您的故事文本..."></textarea>
+                        <button class="btn-text" id="loadStoryFile">从文件读取</button>
+                    </div>
+                    <div class="form-group">
+                        <label for="apiKeyInput">OpenRouter API Key</label>
+                        <input type="password" id="apiKeyInput" placeholder="输入您的 OpenRouter API Key...">
+                        <button class="btn-text" id="loadApiKeyFile">从文件读取</button>
+                    </div>
+                    <button id="startDisassemble" class="btn btn-primary btn-full">启动 AI 拆解</button>
+                </div>
+            </div>
+        </section>
     </main>
 
-    <!-- JSON 导入弹窗 -->
-    <div id="jsonModal" class="modal hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>导入 JSON</h3>
-                <button id="modalClose" class="icon-btn"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="modal-body">
-                <textarea id="jsonInput" placeholder="在此粘贴JSON..." spellcheck="false"></textarea>
-                <div class="json-hint">
-                    <details>
-                        <summary>查看示例格式</summary>
-                        <pre id="jsonExample"></pre>
-                    </details>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button id="modalParse" class="btn btn-primary-modal">解析并加载</button>
-                <button id="modalCancel" class="btn btn-secondary">取消</button>
-            </div>
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2024 MaoDie Nebula. All Rights Reserved.</p>
         </div>
-    </div>
-
-    <!-- 实体总览弹窗 -->
-    <div id="entitiesModal" class="modal hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>实体总览（跨全部小节）</h3>
-                <button id="entitiesClose" class="icon-btn"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="modal-body">
-                <div class="entities-grid">
-                    <div>
-                        <h4><i class="fas fa-user"></i> 人物 <span id="countCharacters" class="count-badge">0</span></h4>
-                        <ul id="entitiesCharacters" class="meta-list"></ul>
-                    </div>
-                    <div>
-                        <h4><i class="fas fa-location-dot"></i> 地点 <span id="countLocations" class="count-badge">0</span></h4>
-                        <ul id="entitiesLocations" class="meta-list"></ul>
-                    </div>
-                    <div>
-                        <h4><i class="fas fa-box"></i> 道具 <span id="countProps" class="count-badge">0</span></h4>
-                        <ul id="entitiesProps" class="meta-list"></ul>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button id="entitiesOk" class="btn btn-primary">确定</button>
-            </div>
-        </div>
-    </div>
-
+    </footer>
     <script src="main.js"></script>
 </body>
 </html>
