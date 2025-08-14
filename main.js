@@ -1,62 +1,34 @@
-// ============ 全局状态管理 ============
-const state = {
-  story: null,  // 当前故事对象
-  selectedSectionId: null  // 当前选中的section
-};
-
-// ============ 工具函数 ============
-function $(selector) { return document.querySelector(selector); }
-function $all(selector) { return document.querySelectorAll(selector); }
-
-function showNotification(message, type = 'info') {
-  const notification = document.createElement('div');
-  notification.textContent = message;
-  notification.style.cssText = `
-    position: fixed; top: 20px; right: 20px; padding: 12px 16px;
-    border-radius: 8px; color: #fff; font-weight: 600; z-index: 10000;
-    transform: translateX(120%); transition: transform .25s ease; max-width: 320px;
-    box-shadow: 0 6px 22px rgba(0,0,0,.2);
-  `;
-  notification.style.background = type === 'success' ? '#10b981' : (type === 'error' ? '#ef4444' : '#6366f1');
-  document.body.appendChild(notification);
-  requestAnimationFrame(() => notification.style.transform = 'translateX(0)');
-  setTimeout(() => {
-    notification.style.transform = 'translateX(120%)';
-    setTimeout(() => notification.remove(), 250);
-  }, 2600);
-}
-
-function safeJsonParse(text) {
-  try { return [JSON.parse(text), null]; } catch (e) { return [null, e]; }
-}
+import { state } from './src/state.js';
+import { $, $all, showNotification, safeJsonParse } from './src/utils.js';
+import { detectJsonType, importStory, importChapter, importParagraph } from './src/storyImport.js';
+import {
+  renderTree as renderTreeMod,
+  updateEntities as updateEntitiesMod,
+  updateEntityList as updateEntityListMod,
+  addNewChapter as addNewChapterMod,
+  addNewParagraph as addNewParagraphMod,
+  deleteChapter as deleteChapterMod,
+  deleteParagraph as deleteParagraphMod,
+  deleteSection as deleteSectionMod,
+  highlightActiveNode as highlightActiveNodeMod
+} from './src/treeRender.js';
+import {
+  selectSection as selectSectionMod,
+  renderList as renderListMod,
+  updateSectionIntentFromEditor as updateSectionIntentFromEditorMod
+} from './src/editorView.js';
+import {
+  createPanelSlots as createPanelSlotsMod,
+  initCanvasArea as initCanvasAreaMod,
+  handleImageUpload as handleImageUploadMod,
+  clearCanvas as clearCanvasMod,
+  removePanel as removePanelMod,
+  updatePanelSlots as updatePanelSlotsMod
+} from './src/panels.js';
+import { openStoryFile as openStoryFileMod, saveStoryAs as saveStoryAsMod, clearStory as clearStoryMod } from './src/fileOps.js';
 
 // ============ JSON结构检测 ============
-function detectJsonType(obj) {
-  if (!obj || typeof obj !== 'object') return null;
-
-  const storyObj = obj.story || obj;
-
-  // 检测是否是完整story（必须包含chapters）
-  if (storyObj.chapters) {
-    // 兼容AI可能返回单个chapter对象而不是数组的情况
-    if (!Array.isArray(storyObj.chapters)) {
-      storyObj.chapters = [storyObj.chapters];
-    }
-    return 'story';
-  }
-  
-  // 检测是否是chapter（必须包含paragraphs数组）
-  if (obj.meta && Array.isArray(obj.paragraphs)) {
-    return 'chapter';
-  }
-  
-  // 检测是否是paragraph（必须包含sections数组）
-  if (obj.meta && Array.isArray(obj.sections)) {
-    return 'paragraph';
-  }
-  
-  return null;
-}
+// moved to src/storyImport.js
 
 // ============ 初始化空故事 ============
 function initEmptyStory() {
@@ -68,182 +40,11 @@ function initEmptyStory() {
     },
     chapters: []
   };
-  renderTree();
+  renderTreeMod();
 }
 
 // ============ 渲染目录树 ============
-function renderTree() {
-  const container = $('#shotTree');
-  container.innerHTML = '';
-  
-  if (!state.story) {
-    initEmptyStory();
-    return;
-  }
-  
-  // 显示故事标题
-  const storyHeader = document.createElement('div');
-  storyHeader.className = 'story-header';
-  storyHeader.innerHTML = `
-    <i class="fas fa-book"></i>
-    <span class="story-title editable-text" contenteditable="true"
-          onblur="updateStoryName(this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${state.story.meta?.name || 'Untitled Story'}</span>
-  `;
-  container.appendChild(storyHeader);
-  
-  // 如果没有章节，显示空状态
-  if (state.story.chapters.length === 0) {
-    const emptyDiv = document.createElement('div');
-    emptyDiv.className = 'empty-tree';
-    emptyDiv.innerHTML = `
-      <div class="empty-card">
-        <div class="empty-actions-grid">
-          <button class="action-card" onclick="addNewChapter()">
-            <i class="fas fa-plus-circle"></i>
-            <span>New Chapter</span>
-          </button>
-          <button class="action-card" onclick="openStoryFile()">
-            <i class="fas fa-folder-open"></i>
-            <span>Open Story</span>
-          </button>
-          <button class="action-card" onclick="openImportModal('story')">
-            <i class="fas fa-file-import"></i>
-            <span>Import JSON</span>
-          </button>
-        </div>
-      </div>
-    `;
-    container.appendChild(emptyDiv);
-    return;
-  }
-  
-  // 渲染章节
-  state.story.chapters.forEach((chapter, cIdx) => {
-    const cDiv = document.createElement('div');
-    cDiv.className = 'tree-group editable';
-    cDiv.innerHTML = `
-      <div class="group-header">
-        <span>Chapter ${cIdx + 1}: </span>
-        <span class="editable-text" contenteditable="true" 
-              onblur="updateChapterTitle(${cIdx}, this.textContent)"
-              onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${chapter.meta?.chapter_title || 'Untitled'}</span>
-        <button class="delete-btn" onclick="deleteChapter(${cIdx})" title="Delete Chapter">
-          <i class="fas fa-trash"></i>
-        </button>
-      </div>
-    `;
-    container.appendChild(cDiv);
-    
-    const cUl = document.createElement('ul');
-    
-    // 渲染段落
-    if (chapter.paragraphs && chapter.paragraphs.length > 0) {
-      chapter.paragraphs.forEach((paragraph, pIdx) => {
-        const pLi = document.createElement('li');
-        const pDiv = document.createElement('div');
-        pDiv.className = 'node with-actions'; 
-        pDiv.innerHTML = `
-          <div class="paragraph-row-1">
-            <span class="paragraph-id-badge">P${pIdx + 1}</span>
-            <div class="paragraph-actions-hover">
-              <button class="action-btn-circle delete small" onclick="deleteParagraph(${cIdx}, ${pIdx}); event.stopPropagation();" title="Delete Paragraph">
-                <i class="fas fa-trash"></i>
-              </button>
-              <button class="action-btn-circle small" onclick="openImportModal('paragraph', ${cIdx}, ${pIdx})" title="Import Paragraph">
-                <i class="fas fa-file-import"></i>
-              </button>
-              <button class="action-btn-circle primary small" onclick="generateSectionsForParagraph(event, ${cIdx}, ${pIdx})" title="Generate Sections">
-                <i class="fas fa-wand-magic-sparkles"></i>
-              </button>
-            </div>
-          </div>
-          <div class="paragraph-row-2">
-            <strong class="title editable-text" contenteditable="true"
-                    onblur="updateParagraphTitle(${cIdx}, ${pIdx}, this.textContent)"
-                    onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
-                    onclick="event.stopPropagation()">${paragraph.meta?.paragraph_title || 'Untitled'}</strong>
-          </div>
-        `;
-        pLi.appendChild(pDiv);
-        
-        // 渲染sections
-        if (paragraph.sections && paragraph.sections.length > 0) {
-          const sUl = document.createElement('ul');
-          paragraph.sections.forEach((section, sIdx) => {
-            const sLi = document.createElement('li');
-            const sDiv = document.createElement('div');
-            sDiv.className = 'node';
-            sDiv.dataset.cIdx = cIdx;
-            sDiv.dataset.pIdx = pIdx;
-            sDiv.dataset.sIdx = sIdx;
-            sDiv.onclick = () => selectSection(cIdx, pIdx, sIdx);
-            
-            const sectionId = `S${sIdx + 1}`;
-            const snippet = section.intent || section.adapted_text?.slice(0, 50) || 'Untitled';
-            sDiv.innerHTML = `
-              <div class="section-content">
-                <span class="title">${sectionId}</span>
-                <span class="muted">· 
-                  <span class="section-text" title="${snippet}">${snippet}</span>
-                </span>
-              </div>
-              <button class="delete-btn small" onclick="deleteSection(${cIdx}, ${pIdx}, ${sIdx}); event.stopPropagation();" title="Delete Section">
-                <i class="fas fa-times"></i>
-              </button>
-            `;
-            sDiv.className += ' with-delete';
-            sLi.appendChild(sDiv);
-            sUl.appendChild(sLi);
-          });
-          pLi.appendChild(sUl);
-        }
-        
-        cUl.appendChild(pLi);
-      });
-    }
-    
-    // 章节操作按钮
-    const cActionLi = document.createElement('li');
-    cActionLi.className = 'action-buttons';
-    cActionLi.innerHTML = `
-      <div class="btn-group">
-        <button class="mini-btn" onclick="openImportModal('chapter', ${cIdx})">
-          <i class="fas fa-file-import"></i> Import Chapter
-        </button>
-        <button class="mini-btn btn-primary" onclick="addNewParagraph(${cIdx})">
-          <i class="fas fa-plus"></i> New Paragraph
-        </button>
-      </div>
-    `;
-    cUl.appendChild(cActionLi);
-    
-    container.appendChild(cUl);
-  });
-  
-  // 根级文件操作按钮
-  const rootActionDiv = document.createElement('div');
-  rootActionDiv.className = 'tree-actions';
-  rootActionDiv.innerHTML = `
-    <button class="mini-btn btn-primary btn-block" onclick="addNewChapter()">
-      <i class="fas fa-plus"></i> New Chapter
-    </button>
-    <div class="btn-group">
-      <button class="mini-btn" onclick="openStoryFile()">
-        <i class="fas fa-folder-open"></i> Open
-      </button>
-      <button class="mini-btn" onclick="saveStoryAs()">
-        <i class="fas fa-save"></i> Save
-      </button>
-      <button class="mini-btn" onclick="clearStory()">
-        <i class="fas fa-trash"></i> Clear
-      </button>
-    </div>
-  `;
-  container.appendChild(rootActionDiv);
-  
-  updateEntities();
-}
+// moved to src/treeRender.js
 
 // ============ 导入JSON处理 ============
 function openImportModal(targetType, chapterIdx = null, paragraphIdx = null) {
@@ -369,168 +170,16 @@ function parseImportJson() {
   }
   
   closeImportModal();
-  renderTree();
+  renderTreeMod();
   showNotification('Import successful', 'success');
 }
 
 // ============ 导入处理函数 ============
-function importStory(storyObj) {
-  // 兼容原始的{ "story": { ... } } 和直接的 { "meta": ..., "chapters": ... } 结构
-  const storyData = storyObj.story || storyObj;
+// moved to src/storyImport.js
 
-  // 完全替换当前story
-  state.story = {
-    meta: {
-      ...(storyData.meta || {}),
-      // 从新的顶层字段读取，并兼容旧的meta字段
-      name: storyData.title || storyData.meta?.name || 'Untitled Story',
-      story_id: storyData.id || storyData.meta?.story_id || "new_story",
-      // 读取并保存原文
-      original_text: storyData.original_text || ''
-    },
-    chapters: []
-  };
-  
-  // 确保chapters是数组
-  const chapters = storyData.chapters || [];
+// moved to src/storyImport.js
 
-  chapters.forEach((chapter, cIdx) => {
-    const newChapter = {
-      meta: {
-        ...chapter.meta,
-        // 从新的顶层字段读取，并兼容旧的meta字段
-        chapter_title: chapter.chapter_title || chapter.meta?.chapter_title || `Chapter ${cIdx + 1}`,
-        chapter_index: chapter.chapter_index !== undefined ? chapter.chapter_index : cIdx,
-        chapter_id: chapter.meta?.chapter_id || `C${cIdx}`
-      },
-      paragraphs: []
-    };
-    
-    const paragraphs = chapter.paragraphs || [];
-    paragraphs.forEach((paragraph, pIdx) => {
-      const newParagraph = {
-        meta: {
-          ...paragraph.meta,
-          // 从新的顶层字段读取，并兼容旧的meta字段
-          paragraph_title: paragraph.paragraph_title || paragraph.meta?.paragraph_title || `Paragraph ${pIdx + 1}`,
-          paragraph_index: paragraph.paragraph_index !== undefined ? paragraph.paragraph_index : pIdx,
-          chapter_index: cIdx,
-          paragraph_id: paragraph.meta?.paragraph_id || `C${cIdx}_P${pIdx}`
-        },
-        // 保留paragraph下的其他字段
-        summary: paragraph.summary,
-        start10: paragraph.start10,
-        end10: paragraph.end10,
-        sections: []
-      };
-      
-      const sections = paragraph.sections || [];
-      sections.forEach((section, sIdx) => {
-        const newSection = {
-          ...section,
-          section_id: section.section_id || `C${cIdx}_P${pIdx}_S${sIdx}`,
-          _panels: section._panels || [null, null, null]
-        };
-        newParagraph.sections.push(newSection);
-      });
-      
-      newChapter.paragraphs.push(newParagraph);
-    });
-    
-    state.story.chapters.push(newChapter);
-  });
-}
-
-function importChapter(chapterObj, targetChapterIdx) {
-  const cIdx = targetChapterIdx !== null ? targetChapterIdx : state.story.chapters.length;
-  
-  const newChapter = {
-    meta: {
-      ...chapterObj.meta,
-      // 从新的顶层字段读取，并兼容旧的meta字段
-      chapter_title: chapterObj.chapter_title || chapterObj.meta?.chapter_title || `Chapter ${cIdx + 1}`,
-      chapter_index: chapterObj.chapter_index !== undefined ? chapterObj.chapter_index : cIdx,
-      chapter_id: chapterObj.meta?.chapter_id || `C${cIdx}`
-    },
-    paragraphs: []
-  };
-  
-  const paragraphs = chapterObj.paragraphs || [];
-  paragraphs.forEach((paragraph, pIdx) => {
-    const newParagraph = {
-      meta: {
-        ...paragraph.meta,
-        // 从新的顶层字段读取，并兼容旧的meta字段
-        paragraph_title: paragraph.paragraph_title || paragraph.meta?.paragraph_title || `Paragraph ${pIdx + 1}`,
-        paragraph_index: paragraph.paragraph_index !== undefined ? paragraph.paragraph_index : pIdx,
-        chapter_index: cIdx,
-        paragraph_id: paragraph.meta?.paragraph_id || `C${cIdx}_P${pIdx}`
-      },
-      summary: paragraph.summary,
-      start10: paragraph.start10,
-      end10: paragraph.end10,
-      sections: []
-    };
-      
-    const sections = paragraph.sections || [];
-    sections.forEach((section, sIdx) => {
-      const newSection = {
-        ...section,
-        section_id: section.section_id || `C${cIdx}_P${pIdx}_S${sIdx}`,
-        _panels: section._panels || [null, null, null]
-      };
-      newParagraph.sections.push(newSection);
-    });
-      
-    newChapter.paragraphs.push(newParagraph);
-  });
-  
-  // 替换或追加章节
-  if (targetChapterIdx !== null && targetChapterIdx < state.story.chapters.length) {
-    state.story.chapters[targetChapterIdx] = newChapter;
-  } else {
-    state.story.chapters.push(newChapter);
-  }
-}
-
-function importParagraph(paragraphObj, chapterIdx, targetParagraphIdx) {
-  if (chapterIdx === null || chapterIdx >= state.story.chapters.length) return;
-  
-  const chapter = state.story.chapters[chapterIdx];
-  const pIdx = targetParagraphIdx !== null ? targetParagraphIdx : chapter.paragraphs.length;
-  
-  const newParagraph = {
-    meta: {
-      ...paragraphObj.meta,
-      // 从新的顶层字段读取，并兼容旧的meta字段
-      paragraph_title: paragraphObj.paragraph_title || paragraphObj.meta?.paragraph_title || `Paragraph ${pIdx + 1}`,
-      paragraph_index: paragraphObj.paragraph_index !== undefined ? paragraphObj.paragraph_index : pIdx,
-      chapter_index: chapterIdx,
-      paragraph_id: paragraphObj.meta?.paragraph_id || `C${chapterIdx}_P${pIdx}`
-    },
-    summary: paragraphObj.summary,
-    start10: paragraphObj.start10,
-    end10: paragraphObj.end10,
-    sections: []
-  };
-  
-  const sections = paragraphObj.sections || [];
-  sections.forEach((section, sIdx) => {
-    const newSection = {
-      ...section,
-      section_id: section.section_id || `C${chapterIdx}_P${pIdx}_S${sIdx}`,
-      _panels: section._panels || [null, null, null]
-    };
-    newParagraph.sections.push(newSection);
-  });
-  
-  // 替换或追加段落
-  if (targetParagraphIdx !== null && targetParagraphIdx < chapter.paragraphs.length) {
-    chapter.paragraphs[targetParagraphIdx] = newParagraph;
-  } else {
-    chapter.paragraphs.push(newParagraph);
-  }
-}
+// moved to src/storyImport.js
 
 // ============ 新建操作 ============
 function addNewChapter() {
@@ -543,7 +192,7 @@ function addNewChapter() {
     },
     paragraphs: []
   });
-  renderTree();
+  renderTreeMod();
 }
 
 function addNewParagraph(chapterIdx) {
@@ -560,280 +209,122 @@ function addNewParagraph(chapterIdx) {
     },
     sections: []
   });
-  renderTree();
+  renderTreeMod();
 }
 
 // ============ Section选择和编辑 ============
-function selectSection(cIdx, pIdx, sIdx) {
-  const section = state.story.chapters[cIdx]?.paragraphs[pIdx]?.sections[sIdx];
-  if (!section) return;
-  
-  state.selectedSectionId = section.section_id;
-  
-  $('#editorEmpty').classList.add('hidden');
-  $('#editorPanel').classList.remove('hidden');
-  
-  // 保存当前编辑的section索引
-  state.currentSection = { cIdx, pIdx, sIdx };
-  
-  // 统一ID前缀为'S'
-  const displaySectionId = section.section_id.replace(/^B/i, 'S');
+// moved to src/editorView.js
 
-  // 更新编辑器内容
-  $('#editorTitle').innerHTML = `
-    <div class="section-id-badge">${displaySectionId}</div>
-    <div class="editable-text section-intent-text" contenteditable="true"
-          onblur="updateSectionIntentFromEditor(this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
-          >${section.intent || 'Untitled'}</div>
-  `;
-  $('#intentText').textContent = section.intent || '';
-  $('#adaptedText').textContent = section.adapted_text || '';
-  
-  // 更新元信息
-  const visuals = section.visuals || {};
-  const audio = section.audio || {};
-  
-  renderList('#metaCharacters', visuals.characters || []);
-  renderList('#metaProps', visuals.props || []);
-  renderList('#metaLocation', visuals.location ? [visuals.location] : []);
-  renderList('#metaVisuals', visuals.visual_message || []);
-  renderList('#metaNarration', audio.narration ? [audio.narration] : []);
-  renderList('#metaDialogues', (audio.dialogues || []).map(d => `${d.character}: ${d.line}`));
-  renderList('#metaSfx', audio.sfx || []);
-  
-  updatePanelSlots(section);
-  highlightActiveNode();
-  
-  // 高亮和置顶右侧全局元信息
-  highlightAndSortGlobalMeta(section);
-}
-
-function renderList(selector, items) {
-  const el = $(selector);
-  if (!el) return;
-  el.innerHTML = '';
-  items.forEach(item => {
-    const li = document.createElement('li');
-    li.textContent = item;
-    el.appendChild(li);
-  });
-}
+// moved to src/editorView.js
 
 function highlightActiveNode() {
   $all('.tree .node').forEach(n => n.classList.remove('active'));
   if (state.selectedSectionId) {
-    $all('.tree .node').forEach(n => {
-      const section = state.story.chapters[n.dataset.cIdx]?.paragraphs[n.dataset.pIdx]?.sections[n.dataset.sIdx];
-      if (section && section.section_id === state.selectedSectionId) {
-        n.classList.add('active');
-      }
-    });
+    const activeNode = $(`.tree .node[data-unique-id="${state.selectedSectionId}"]`);
+    if (activeNode) {
+      activeNode.classList.add('active');
+    }
   }
 }
 
 // ============ 实体统计 ============
-function updateEntities() {
-  const entities = {
-    characters: new Set(),
-    locations: new Set(),
-    props: new Set()
-  };
-  
-  // 检查是否有有效的故事和章节
-  if (state.story && state.story.chapters) {
-    state.story.chapters.forEach(chapter => {
-      chapter.paragraphs?.forEach(paragraph => {
-        paragraph.sections?.forEach(section => {
-          const v = section.visuals || {};
-          (v.characters || []).forEach(c => entities.characters.add(c));
-          if (v.location) entities.locations.add(v.location);
-          (v.props || []).forEach(p => entities.props.add(p));
-        });
-      });
-    });
-  }
-  
-  // 更新右侧统计
-  updateEntityList('#asideCharacters', entities.characters);
-  updateEntityList('#asideLocations', entities.locations);
-  updateEntityList('#asideProps', entities.props);
-  
-  const charCountEl = $('#asideCountCharacters');
-  const locCountEl = $('#asideCountLocations');
-  const propCountEl = $('#asideCountProps');
-  
-  if (charCountEl) charCountEl.textContent = entities.characters.size;
-  if (locCountEl) locCountEl.textContent = entities.locations.size;
-  if (propCountEl) propCountEl.textContent = entities.props.size;
-}
+// moved to src/treeRender.js
 
-function updateEntityList(selector, set) {
-  const el = $(selector);
-  if (!el) return;
-  el.innerHTML = '';
-  Array.from(set).sort().forEach(item => {
-    const li = document.createElement('li');
-    li.textContent = item;
-    li.dataset.value = item; // 添加data属性便于后续查找
-    el.appendChild(li);
-  });
-}
+// moved to src/treeRender.js
 
 // ============ 面板管理 ============
-function createPanelSlots() {
-  // 新的大画布区域已在HTML中定义
-  initCanvasArea();
-  initTabSwitching();
-}
+// moved to src/panels.js
 
 // 初始化画布区域
-function initCanvasArea() {
-  const placeholder = $('.canvas-placeholder');
-  const fileInput = $('#canvasFileInput');
-  
-  if (placeholder && fileInput) {
-    placeholder.addEventListener('click', () => fileInput.click());
-    
-    // 拖拽上传
-    const canvasArea = $('.canvas-area');
-    canvasArea.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      canvasArea.classList.add('dragover');
-    });
-    
-    canvasArea.addEventListener('dragleave', () => {
-      canvasArea.classList.remove('dragover');
-    });
-    
-    canvasArea.addEventListener('drop', (e) => {
-      e.preventDefault();
-      canvasArea.classList.remove('dragover');
-      // 处理文件上传
-      const files = e.dataTransfer.files;
-      if (files.length > 0) {
-        handleImageUpload(files[0]);
-      }
-    });
-  }
-}
+// moved to src/panels.js
 
 // 初始化标签页切换（已移除标签页设计）
-function initTabSwitching() {
-  // 标签页功能已移除，所有信息同时展示
-}
+// moved to src/panels.js
 
-function updatePanelSlots(section) {
-  const slots = $all('.panel-slot');
-  const panels = section._panels || [null, null, null];
-  
-  slots.forEach((slot, idx) => {
-    const url = panels[idx];
-    if (url) {
-      slot.innerHTML = `
-        <img src="${url}" alt="Panel ${idx + 1}">
-        <button class="remove-btn" onclick="removePanel(${idx})">Remove</button>
-      `;
-    }
-  });
-}
+// moved to src/panels.js
 
-function handleImageUpload(file) {
-  // 实现图片上传逻辑
-  if (file && file.type.startsWith('image/')) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      // 显示图片预览
-      const canvasArea = $('.canvas-area');
-      canvasArea.innerHTML = `
-        <img src="${e.target.result}" alt="Preview" style="max-width: 100%; max-height: 100%; object-fit: contain;">
-        <button class="remove-btn" onclick="clearCanvas()" style="position: absolute; top: 10px; right: 10px;">
-          <i class="fas fa-times"></i> 清除
-        </button>
-      `;
-    };
-    reader.readAsDataURL(file);
-  }
-}
+// moved to src/panels.js
 
-function clearCanvas() {
-  const canvasArea = $('.canvas-area');
-  canvasArea.innerHTML = `
-    <div class="canvas-placeholder">
-      <i class="fas fa-cloud-upload-alt"></i>
-      <p>拖拽图片到此处或点击上传</p>
-      <input type="file" accept="image/*" multiple style="display: none;" id="canvasFileInput">
-    </div>
-  `;
-  initCanvasArea();
-}
+// moved to src/panels.js
 
-function removePanel(index) {
-  // 实现移除面板逻辑
-}
+// moved to src/panels.js
 
 // ============ 初始化 ============
-document.addEventListener('DOMContentLoaded', () => {
-  // 仅在编辑器页面执行的初始化
-  if (document.querySelector('.app-container')) {
-    const storyFromAI = localStorage.getItem('aiStory');
-    if (storyFromAI) {
+function initializeApp() {
+  try {
+    // 仅在编辑器页面执行的初始化
+    if (document.querySelector('.app-container')) {
+      const shotTree = $('#shotTree');
+      if (shotTree) {
+        shotTree.classList.add('tree');
+      }
+
+      const storyFromAI = localStorage.getItem('aiStory');
+      if (storyFromAI) {
         const [storyData, err] = safeJsonParse(storyFromAI);
         if (storyData && !err) {
-            importStory(storyData);
-            renderTree();
-            showNotification('成功加载AI生成的故事！', 'success');
+          importStory(storyData);
+          renderTreeMod();
+          showNotification('成功加载AI生成的故事！', 'success');
         }
-        localStorage.removeItem('aiStory'); // 用后即焚
-    } else {
+        localStorage.removeItem('aiStory');
+      } else {
         initEmptyStory();
-    }
-    
-    // 创建面板槽位
-    createPanelSlots();
-    
-    // 绑定模态框事件
-    $('#modalClose')?.addEventListener('click', closeImportModal);
-    $('#modalCancel')?.addEventListener('click', closeImportModal);
-    $('#modalParse')?.addEventListener('click', parseImportJson);
-    
-    // 搜索功能
-    $('#treeSearch')?.addEventListener('input', (e) => {
-      const keyword = e.target.value.toLowerCase();
-      $all('.tree .node').forEach(node => {
-        node.style.display = node.textContent.toLowerCase().includes(keyword) ? '' : 'none';
+      }
+
+      // 创建面板槽位
+      createPanelSlotsMod();
+
+      // 绑定模态框事件
+      $('#modalClose')?.addEventListener('click', closeImportModal);
+      $('#modalCancel')?.addEventListener('click', closeImportModal);
+      $('#modalParse')?.addEventListener('click', parseImportJson);
+
+      // 搜索功能
+      $('#treeSearch')?.addEventListener('input', (e) => {
+        const keyword = e.target.value.toLowerCase();
+        $all('.tree .node').forEach(node => {
+          node.style.display = node.textContent.toLowerCase().includes(keyword) ? '' : 'none';
+        });
       });
-    });
+
+      // 兜底刷新一次目录
+      if (state.story) {
+        renderTreeMod();
+      }
+    }
+  } catch (err) {
+    console.error('Editor initialize error:', err);
+    showNotification('初始化编辑器失败，请查看控制台错误', 'error');
   }
 
-  // 首页特有的逻辑
+  // 首页特有的逻辑（独立绑定，避免被前面错误影响）
   const startDisassembleBtn = $('#startDisassemble');
   if (startDisassembleBtn) {
     startDisassembleBtn.addEventListener('click', () => {
       const storyText = $('#storyInput').value;
       const apiKey = $('#apiKeyInput').value;
-
-      if (!storyText.trim()) {
-        showNotification('请输入故事内容', 'error');
-        return;
-      }
-      if (!apiKey.trim()) {
-        showNotification('请输入OpenRouter API Key', 'error');
-        return;
-      }
-      
-      disassembleStoryWithAI(storyText, apiKey);
-    });
-
-    $('#loadStoryFile').addEventListener('click', () => {
-        handleFileUpload('#storyInput');
-    });
-
-    $('#loadApiKeyFile').addEventListener('click', () => {
-        handleFileUpload('#apiKeyInput');
+      if (!storyText.trim()) { showNotification('请输入故事内容', 'error'); return; }
+      if (!apiKey.trim()) { showNotification('请输入OpenRouter API Key', 'error'); return; }
+      import('./src/ai.js').then(m => m.disassembleStoryWithAI(storyText, apiKey));
     });
   }
-});
+
+  const loadStoryBtn = $('#loadStoryFile');
+  if (loadStoryBtn) {
+    loadStoryBtn.addEventListener('click', () => handleFileUpload('#storyInput'));
+  }
+  const loadKeyBtn = $('#loadApiKeyFile');
+  if (loadKeyBtn) {
+    loadKeyBtn.addEventListener('click', () => handleFileUpload('#apiKeyInput'));
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeApp);
+} else {
+  initializeApp();
+}
 
 function handleFileUpload(targetElementSelector) {
     const input = document.createElement('input');
@@ -1022,109 +513,11 @@ ${storyText}
 
 
 // ============ 文件操作 ============
-async function openStoryFile() {
-  try {
-    // 创建文件输入元素
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json,application/json';
-    
-    input.onchange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      
-      const text = await file.text();
-      const [obj, err] = safeJsonParse(text);
-      
-      if (err) {
-        showNotification('Invalid JSON file', 'error');
-        return;
-      }
-      
-      const jsonType = detectJsonType(obj);
-      if (jsonType !== 'story') {
-        showNotification('File must contain a complete story structure', 'error');
-        return;
-      }
-      
-      importStory(obj);
-      renderTree();
-      showNotification('Story loaded successfully', 'success');
-    };
-    
-    input.click();
-  } catch (e) {
-    showNotification('Failed to open file', 'error');
-  }
-}
+// moved to src/fileOps.js
 
-async function saveStoryAs() {
-  if (!state.story) {
-    showNotification('No story to save', 'error');
-    return;
-  }
-  
-  // 构建一个完全符合新输出结构的 story 对象
-  const storyToSave = {
-    id: state.story.meta.story_id,
-    title: state.story.meta.name,
-    original_text: state.story.meta.original_text || '', // 添加原文
-    chapters: (state.story.chapters || []).map(chapter => {
-      
-      const newParagraphs = (chapter.paragraphs || []).map(p => {
-        // 从 paragraph.meta 中提取 title 和 index
-        const { paragraph_title, paragraph_index } = p.meta;
-        // 创建新的 paragraph 对象，不含 meta，保留其他顶层属性
-        return {
-          paragraph_index: paragraph_index,
-          paragraph_title: paragraph_title,
-          summary: p.summary,
-          start10: p.start10,
-          end10: p.end10,
-          sections: p.sections,
-        };
-      });
+// moved to src/fileOps.js
 
-      // 从 chapter.meta 中提取 title 和 index
-      const { chapter_title, chapter_index } = chapter.meta;
-      // 创建新的 chapter 对象，不含 meta
-      return {
-        chapter_index: chapter_index,
-        chapter_title: chapter_title,
-        paragraphs: newParagraphs,
-      };
-    })
-  };
-
-  const storyData = {
-    story: storyToSave
-  };
-  
-  const jsonText = JSON.stringify(storyData, null, 2);
-  const blob = new Blob([jsonText], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${state.story.meta?.name || 'story'}_${new Date().toISOString().slice(0,10)}.json`;
-  a.click();
-  
-  URL.revokeObjectURL(url);
-  showNotification('Story saved successfully', 'success');
-}
-
-function clearStory() {
-  if (confirm('Are you sure you want to clear the entire story?')) {
-    initEmptyStory();
-    updateEntities(); // 清空实体统计
-    
-    // 隐藏编辑器，显示空状态
-    $('#editorPanel').classList.add('hidden');
-    $('#editorEmpty').classList.remove('hidden');
-    
-    showNotification('Story cleared', 'info');
-  }
-}
+// moved to src/fileOps.js
 
 // ============ 标题编辑 ============
 function updateStoryName(newName) {
@@ -1176,7 +569,7 @@ function deleteChapter(cIdx) {
     });
   });
   
-  renderTree();
+  renderTreeMod();
   showNotification('Chapter deleted', 'info');
 }
 
@@ -1199,7 +592,7 @@ function deleteParagraph(cIdx, pIdx) {
     });
   });
   
-  renderTree();
+  renderTreeMod();
   showNotification('Paragraph deleted', 'info');
 }
 
@@ -1213,7 +606,7 @@ function deleteSection(cIdx, pIdx, sIdx) {
   
   // 保留原有的section_id，不重新分配
   
-  renderTree();
+  renderTreeMod();
   showNotification('Section deleted', 'info');
 }
 
@@ -1221,58 +614,41 @@ function deleteSection(cIdx, pIdx, sIdx) {
 window.openImportModal = openImportModal;
 window.closeImportModal = closeImportModal;
 window.parseImportJson = parseImportJson;
-window.addNewChapter = addNewChapter;
-window.addNewParagraph = addNewParagraph;
-window.selectSection = selectSection;
-window.removePanel = removePanel;
-window.openStoryFile = openStoryFile;
-window.saveStoryAs = saveStoryAs;
-window.clearStory = clearStory;
+window.addNewChapter = addNewChapterMod;
+window.addNewParagraph = addNewParagraphMod;
+window.selectSection = selectSectionMod;
+window.removePanel = removePanelMod;
+window.updatePanelSlots = updatePanelSlotsMod;
+window.openStoryFile = openStoryFileMod;
+window.saveStoryAs = saveStoryAsMod;
+window.clearStory = clearStoryMod;
 window.updateStoryName = updateStoryName;
 window.updateChapterTitle = updateChapterTitle;
 window.updateParagraphTitle = updateParagraphTitle;
-window.deleteChapter = deleteChapter;
-window.deleteParagraph = deleteParagraph;
-window.deleteSection = deleteSection;
+window.deleteChapter = deleteChapterMod;
+window.deleteParagraph = deleteParagraphMod;
+window.deleteSection = deleteSectionMod;
 
 // 添加section intent更新函数 - 从编辑器更新
-function updateSectionIntentFromEditor(newIntent) {
-  if (!state.currentSection) return;
-  
-  const { cIdx, pIdx, sIdx } = state.currentSection;
-  const section = state.story.chapters[cIdx]?.paragraphs[pIdx]?.sections[sIdx];
-  if (!section) return;
-  
-  section.intent = newIntent.trim() || 'Untitled';
-  
-  // 只更新目录树中对应节点的文本，避免重新渲染整个树
-  const nodes = $all('.tree .node');
-  nodes.forEach(node => {
-    if (node.dataset.cIdx == cIdx && 
-        node.dataset.pIdx == pIdx && 
-        node.dataset.sIdx == sIdx) {
-      const textEl = node.querySelector('.section-text');
-      if (textEl) {
-        const snippet = section.intent || section.adapted_text?.slice(0, 50) || 'Untitled';
-        textEl.textContent = snippet;
-        textEl.title = snippet;
-      }
-    }
-  });
-  
-  showNotification('Section intent updated', 'success');
-}
-window.updateSectionIntentFromEditor = updateSectionIntentFromEditor;
+// moved to src/editorView.js
+window.updateSectionIntentFromEditor = updateSectionIntentFromEditorMod;
 
 // ============ 段落文本提取 ============
 function findParagraphText(fullText, start, end) {
   if (!fullText || !start || !end) return null;
 
   const startIndex = fullText.indexOf(start);
-  if (startIndex === -1) return null;
-
+  if (startIndex === -1) {
+    console.error("findParagraphText: Start anchor not found:", start);
+    return null;
+  }
+  
   const endIndex = fullText.indexOf(end, startIndex + start.length);
-  if (endIndex === -1) return null;
+
+  if (endIndex === -1) {
+    console.error("findParagraphText: End anchor not found after start:", end);
+    return null;
+  }
 
   return fullText.substring(startIndex, endIndex + end.length);
 }
@@ -1296,6 +672,14 @@ async function generateSectionsForParagraph(event, cIdx, pIdx) {
   if (!paragraph || !paragraphText) {
     showNotification('Paragraph data or raw text is missing or could not be found.', 'error');
     return;
+  }
+
+  // 在生成新内容前，清空旧的sections
+  paragraph.sections = [];
+
+  const paragraphNode = document.querySelector(`.node.with-actions[data-chapter-idx='${cIdx}'][data-paragraph-idx='${pIdx}']`);
+  if (paragraphNode) {
+    paragraphNode.classList.add('generating');
   }
 
   // 获取上下文摘要
@@ -1481,7 +865,7 @@ ${knowledgeBase}
   
   const button = event.target.closest('button');
   button.disabled = true;
-  button.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Generating...`;
+  button.innerHTML = `<i class="fas fa-spinner fa-spin"></i>`;
 
   try {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -1517,7 +901,7 @@ ${knowledgeBase}
     if (parsedJson && Array.isArray(parsedJson.sections)) {
       paragraph.sections = parsedJson.sections;
       showNotification(`Successfully generated ${parsedJson.sections.length} sections!`, 'success');
-      renderTree(); // 重新渲染以反映变化
+      renderTreeMod(); // 重新渲染以反映变化
     } else {
       throw new Error("Invalid sections data received from AI.");
     }
@@ -1526,8 +910,14 @@ ${knowledgeBase}
     showNotification(`Failed to generate sections: ${error.message}`, 'error');
     console.error("Section Generation Error:", error);
   } finally {
-    button.disabled = false;
-    button.innerHTML = `<i class="fas fa-wand-magic-sparkles"></i> Generate Sections`;
+    const button = event.target.closest('button');
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = `<i class="fas fa-wand-magic-sparkles"></i>`;
+    }
+    if (paragraphNode) {
+      paragraphNode.classList.remove('generating');
+    }
   }
 }
 window.generateSectionsForParagraph = generateSectionsForParagraph;
@@ -1640,4 +1030,4 @@ function clearGlobalMetaHighlight() {
 // 导出函数供外部调用
 window.highlightAndSortGlobalMeta = highlightAndSortGlobalMeta;
 window.clearGlobalMetaHighlight = clearGlobalMetaHighlight;
-window.clearCanvas = clearCanvas;
+window.clearCanvas = clearCanvasMod;
