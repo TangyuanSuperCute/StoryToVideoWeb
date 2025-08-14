@@ -10,12 +10,15 @@ import {
   deleteChapter as deleteChapterMod,
   deleteParagraph as deleteParagraphMod,
   deleteSection as deleteSectionMod,
-  highlightActiveNode as highlightActiveNodeMod
+  highlightActiveNode as highlightActiveNodeMod,
+  bindTreeSearch as bindTreeSearchMod
 } from './src/treeRender.js';
 import {
   selectSection as selectSectionMod,
   renderList as renderListMod,
-  updateSectionIntentFromEditor as updateSectionIntentFromEditorMod
+  updateSectionIntentFromEditor as updateSectionIntentFromEditorMod,
+  highlightAndSortGlobalMeta as highlightAndSortGlobalMetaMod,
+  clearGlobalMetaHighlight as clearGlobalMetaHighlightMod
 } from './src/editorView.js';
 import {
   createPanelSlots as createPanelSlotsMod,
@@ -26,6 +29,8 @@ import {
   updatePanelSlots as updatePanelSlotsMod
 } from './src/panels.js';
 import { openStoryFile as openStoryFileMod, saveStoryAs as saveStoryAsMod, clearStory as clearStoryMod } from './src/fileOps.js';
+import { generateSectionsForParagraph as generateSectionsForParagraphMod } from './src/ai.js';
+import { updateStoryName as updateStoryNameMod, updateChapterTitle as updateChapterTitleMod, updateParagraphTitle as updateParagraphTitleMod } from './src/metadata.js';
 
 // ============ JSON结构检测 ============
 // moved to src/storyImport.js
@@ -182,50 +187,16 @@ function parseImportJson() {
 // moved to src/storyImport.js
 
 // ============ 新建操作 ============
-function addNewChapter() {
-  const cIdx = state.story.chapters.length;
-  state.story.chapters.push({
-    meta: {
-      chapter_index: cIdx,  // 从0开始
-      chapter_id: `C${cIdx}`,
-      chapter_title: `Chapter ${cIdx + 1}`  // 显示从1开始
-    },
-    paragraphs: []
-  });
-  renderTreeMod();
-}
+// moved to src/treeRender.js
 
-function addNewParagraph(chapterIdx) {
-  const chapter = state.story.chapters[chapterIdx];
-  if (!chapter) return;
-  
-  const pIdx = chapter.paragraphs.length;
-  chapter.paragraphs.push({
-    meta: {
-      chapter_index: chapterIdx,  // 从0开始
-      paragraph_index: pIdx,  // 从0开始
-      paragraph_id: `C${chapterIdx}_P${pIdx}`,
-      paragraph_title: `Paragraph ${pIdx + 1}`  // 显示从1开始
-    },
-    sections: []
-  });
-  renderTreeMod();
-}
+// moved to src/treeRender.js
 
 // ============ Section选择和编辑 ============
 // moved to src/editorView.js
 
 // moved to src/editorView.js
 
-function highlightActiveNode() {
-  $all('.tree .node').forEach(n => n.classList.remove('active'));
-  if (state.selectedSectionId) {
-    const activeNode = $(`.tree .node[data-unique-id="${state.selectedSectionId}"]`);
-    if (activeNode) {
-      activeNode.classList.add('active');
-    }
-  }
-}
+// moved to src/treeRender.js
 
 // ============ 实体统计 ============
 // moved to src/treeRender.js
@@ -280,13 +251,8 @@ function initializeApp() {
       $('#modalCancel')?.addEventListener('click', closeImportModal);
       $('#modalParse')?.addEventListener('click', parseImportJson);
 
-      // 搜索功能
-      $('#treeSearch')?.addEventListener('input', (e) => {
-        const keyword = e.target.value.toLowerCase();
-        $all('.tree .node').forEach(node => {
-          node.style.display = node.textContent.toLowerCase().includes(keyword) ? '' : 'none';
-        });
-      });
+      // 搜索功能（委托到模块）
+      bindTreeSearchMod();
 
       // 兜底刷新一次目录
       if (state.story) {
@@ -520,138 +486,31 @@ ${storyText}
 // moved to src/fileOps.js
 
 // ============ 标题编辑 ============
-function updateStoryName(newName) {
-  state.story.meta = state.story.meta || {};
-  state.story.meta.name = newName.trim() || 'Untitled Story';
-  showNotification('Story name updated', 'success');
-}
-
-function updateChapterTitle(cIdx, newTitle) {
-  if (!state.story.chapters[cIdx]) return;
-  
-  state.story.chapters[cIdx].meta = state.story.chapters[cIdx].meta || {};
-  state.story.chapters[cIdx].meta.chapter_title = newTitle.trim() || 'Untitled';
-  
-  showNotification('Chapter title updated', 'success');
-}
-
-function updateParagraphTitle(cIdx, pIdx, newTitle) {
-  const paragraph = state.story.chapters[cIdx]?.paragraphs[pIdx];
-  if (!paragraph) return;
-  
-  paragraph.meta = paragraph.meta || {};
-  paragraph.meta.paragraph_title = newTitle.trim() || 'Untitled';
-  
-  showNotification('Paragraph title updated', 'success');
-}
+// moved to src/metadata.js
 
 // ============ 删除功能 ============
-function deleteChapter(cIdx) {
-  if (!confirm(`Delete Chapter ${cIdx + 1} and all its contents?`)) return;
-  
-  state.story.chapters.splice(cIdx, 1);
-  
-  // 重新分配章节索引（从0开始）
-  state.story.chapters.forEach((chapter, idx) => {
-    chapter.meta.chapter_index = idx;  // 从0开始
-    chapter.meta.chapter_id = `C${idx}`;
-    
-    // 更新段落ID
-    chapter.paragraphs?.forEach((para, pIdx) => {
-      para.meta.chapter_index = idx;  // 从0开始
-      para.meta.paragraph_index = pIdx;  // 从0开始
-      para.meta.paragraph_id = `C${idx}_P${pIdx}`;
-      
-      // 更新section ID
-      para.sections?.forEach((sec, sIdx) => {
-        sec.section_id = sec.section_id || `C${idx}_P${pIdx}_S${sIdx}`;
-      });
-    });
-  });
-  
-  renderTreeMod();
-  showNotification('Chapter deleted', 'info');
-}
+// moved to src/treeRender.js
 
-function deleteParagraph(cIdx, pIdx) {
-  if (!confirm(`Delete Paragraph ${pIdx + 1} and all its sections?`)) return;
-  
-  const chapter = state.story.chapters[cIdx];
-  if (!chapter) return;
-  
-  chapter.paragraphs.splice(pIdx, 1);
-  
-  // 重新分配段落索引（从0开始）
-  chapter.paragraphs.forEach((para, idx) => {
-    para.meta.paragraph_index = idx;  // 从0开始
-    para.meta.paragraph_id = `C${cIdx}_P${idx}`;
-    
-    // 更新section ID
-    para.sections?.forEach((sec, sIdx) => {
-      sec.section_id = sec.section_id || `C${cIdx}_P${idx}_S${sIdx}`;
-    });
-  });
-  
-  renderTreeMod();
-  showNotification('Paragraph deleted', 'info');
-}
+// moved to src/treeRender.js
 
-function deleteSection(cIdx, pIdx, sIdx) {
-  if (!confirm(`Delete Section ${sIdx + 1}?`)) return;
-  
-  const paragraph = state.story.chapters[cIdx]?.paragraphs[pIdx];
-  if (!paragraph) return;
-  
-  paragraph.sections.splice(sIdx, 1);
-  
-  // 保留原有的section_id，不重新分配
-  
-  renderTreeMod();
-  showNotification('Section deleted', 'info');
-}
+// moved to src/treeRender.js
 
 // 导出全局函数供HTML调用
 window.openImportModal = openImportModal;
 window.closeImportModal = closeImportModal;
 window.parseImportJson = parseImportJson;
-window.addNewChapter = addNewChapterMod;
-window.addNewParagraph = addNewParagraphMod;
-window.selectSection = selectSectionMod;
-window.removePanel = removePanelMod;
-window.updatePanelSlots = updatePanelSlotsMod;
-window.openStoryFile = openStoryFileMod;
-window.saveStoryAs = saveStoryAsMod;
-window.clearStory = clearStoryMod;
-window.updateStoryName = updateStoryName;
-window.updateChapterTitle = updateChapterTitle;
-window.updateParagraphTitle = updateParagraphTitle;
-window.deleteChapter = deleteChapterMod;
-window.deleteParagraph = deleteParagraphMod;
-window.deleteSection = deleteSectionMod;
+// 以下接口逐步收敛，事件委托已替代
+// 保留 minimal 对外接口：导入弹窗
+window.updateStoryName = updateStoryNameMod;
+window.updateChapterTitle = updateChapterTitleMod;
+window.updateParagraphTitle = updateParagraphTitleMod;
+// 删除/新增等操作已由事件委托驱动，无需 window 暴露
 
 // 添加section intent更新函数 - 从编辑器更新
 // moved to src/editorView.js
-window.updateSectionIntentFromEditor = updateSectionIntentFromEditorMod;
+// 由模块内部事件绑定处理，不再暴露
 
-// ============ 段落文本提取 ============
-function findParagraphText(fullText, start, end) {
-  if (!fullText || !start || !end) return null;
-
-  const startIndex = fullText.indexOf(start);
-  if (startIndex === -1) {
-    console.error("findParagraphText: Start anchor not found:", start);
-    return null;
-  }
-  
-  const endIndex = fullText.indexOf(end, startIndex + start.length);
-
-  if (endIndex === -1) {
-    console.error("findParagraphText: End anchor not found after start:", end);
-    return null;
-  }
-
-  return fullText.substring(startIndex, endIndex + end.length);
-}
+// moved to src/ai.js
 
 
 // ============ 段落级 Section 生成 ============
@@ -920,114 +779,17 @@ ${knowledgeBase}
     }
   }
 }
-window.generateSectionsForParagraph = generateSectionsForParagraph;
+window.generateSectionsForParagraph = generateSectionsForParagraphMod;
 
 
-// ============ 高亮和置顶全局元信息 ============
-function highlightAndSortGlobalMeta(section) {
-  const visuals = section.visuals || {};
-  const audio = section.audio || {};
-  
-  // 获取当前section使用的元信息
-  const usedCharacters = new Set(visuals.characters || []);
-  const usedLocations = new Set(visuals.location ? [visuals.location] : []);
-  const usedProps = new Set(visuals.props || []);
-  
-  // 从对话中提取角色
-  if (audio.dialogues) {
-    audio.dialogues.forEach(d => {
-      if (d.character) usedCharacters.add(d.character);
-    });
-  }
-  
-  // 处理三个列表
-  animateSortList('#asideCharacters', usedCharacters);
-  animateSortList('#asideLocations', usedLocations);
-  animateSortList('#asideProps', usedProps);
-}
+// moved to src/editorView.js
 
-function animateSortList(selector, usedSet) {
-  const container = $(selector);
-  if (!container) return;
-  
-  const items = Array.from(container.children);
-  if (items.length === 0) return;
-  
-  // 记录原始位置
-  const originalPositions = new Map();
-  items.forEach(item => {
-    const rect = item.getBoundingClientRect();
-    originalPositions.set(item, rect.top);
-  });
-  
-  // 分离已使用和未使用的项目
-  const usedItems = [];
-  const unusedItems = [];
-  
-  items.forEach(item => {
-    const value = item.dataset.value || item.textContent;
-    
-    // 移除之前的高亮
-    item.classList.remove('meta-item-highlighted', 'meta-item-faded');
-    
-    if (usedSet.has(value)) {
-      usedItems.push(item);
-      item.classList.add('meta-item-highlighted');
-    } else {
-      unusedItems.push(item);
-      item.classList.add('meta-item-faded');
-    }
-  });
-  
-  // 重新排序：先显示使用的，再显示未使用的
-  const sortedItems = [...usedItems, ...unusedItems];
-  
-  // 清空容器并重新添加
-  container.innerHTML = '';
-  sortedItems.forEach(item => container.appendChild(item));
-  
-  // 计算新位置并应用动画
-  sortedItems.forEach(item => {
-    const newRect = item.getBoundingClientRect();
-    const oldTop = originalPositions.get(item);
-    const deltaY = oldTop - newRect.top;
-    
-    if (Math.abs(deltaY) > 1) {
-      // 设置初始位置
-      item.style.transform = `translateY(${deltaY}px)`;
-      item.style.transition = 'none';
-      
-      // 强制重绘
-      item.offsetHeight;
-      
-      // 应用动画
-      item.style.transform = '';
-      item.style.transition = 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
-    }
-  });
-  
-  // 清理过渡样式
-  setTimeout(() => {
-    sortedItems.forEach(item => {
-      item.style.transform = '';
-      item.style.transition = '';
-    });
-  }, 400);
-}
+// moved to src/editorView.js
 
 // 清除高亮（当没有选中section时调用）
-function clearGlobalMetaHighlight() {
-  ['#asideCharacters', '#asideLocations', '#asideProps'].forEach(selector => {
-    const container = $(selector);
-    if (!container) return;
-    
-    Array.from(container.children).forEach(item => {
-      item.classList.remove('meta-item-highlighted', 'meta-item-faded');
-    });
-  });
-}
+// moved to src/editorView.js
 
 // 导出函数供外部调用
-window.highlightAndSortGlobalMeta = highlightAndSortGlobalMeta;
-window.clearGlobalMetaHighlight = clearGlobalMetaHighlight;
+window.highlightAndSortGlobalMeta = highlightAndSortGlobalMetaMod;
+window.clearGlobalMetaHighlight = clearGlobalMetaHighlightMod;
 window.clearCanvas = clearCanvasMod;

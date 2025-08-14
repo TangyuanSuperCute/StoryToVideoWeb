@@ -8,6 +8,9 @@ export async function openStoryFile() {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json,application/json';
+    input.style.display = 'none';
+    // 放到 body，避免某些浏览器重复触发
+    document.body.appendChild(input);
 
     input.onchange = async (e) => {
       const file = e.target.files[0];
@@ -23,6 +26,13 @@ export async function openStoryFile() {
       importStory(obj);
       renderTreeMod();
       showNotification('Story loaded successfully', 'success');
+
+      // 清理 input，防重复触发
+      input.value = '';
+      input.onchange = null;
+      requestAnimationFrame(() => {
+        input.remove();
+      });
     };
 
     input.click();

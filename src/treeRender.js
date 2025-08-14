@@ -1,5 +1,8 @@
 import { state } from './state.js';
 import { $, $all, showNotification } from './utils.js';
+import { openStoryFile, saveStoryAs, clearStory } from './fileOps.js';
+import { generateSectionsForParagraph } from './ai.js';
+import { selectSection } from './editorView.js';
 
 // ============ 渲染目录树 ============
 export function renderTree() {
@@ -28,15 +31,15 @@ export function renderTree() {
     emptyDiv.innerHTML = `
       <div class="empty-card">
         <div class="empty-actions-grid">
-          <button class="action-card" onclick="addNewChapter()">
+          <button class="action-card" data-action="add-chapter">
             <i class="fas fa-plus-circle"></i>
             <span>New Chapter</span>
           </button>
-          <button class="action-card" onclick="openStoryFile()">
+          <button class="action-card" data-action="open-story">
             <i class="fas fa-folder-open"></i>
             <span>Open Story</span>
           </button>
-          <button class="action-card" onclick="openImportModal('story')">
+          <button class="action-card" data-action="import-story">
             <i class="fas fa-file-import"></i>
             <span>Import JSON</span>
           </button>
@@ -57,7 +60,7 @@ export function renderTree() {
         <span class="editable-text" contenteditable="true" 
               onblur="updateChapterTitle(${cIdx}, this.textContent)"
               onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${chapter.meta?.chapter_title || 'Untitled'}</span>
-        <button class="delete-btn" onclick="deleteChapter(${cIdx})" title="Delete Chapter">
+        <button class="delete-btn" data-action="delete-chapter" data-c="${cIdx}" title="Delete Chapter">
           <i class="fas fa-trash"></i>
         </button>
       </div>
@@ -78,13 +81,13 @@ export function renderTree() {
           <div class="paragraph-row-1">
             <span class="paragraph-id-badge">P${pIdx + 1}</span>
             <div class="paragraph-actions-hover">
-              <button class="action-btn-circle delete small" onclick="deleteParagraph(${cIdx}, ${pIdx}); event.stopPropagation();" title="Delete Paragraph">
+              <button class="action-btn-circle delete small" data-action="delete-paragraph" data-c="${cIdx}" data-p="${pIdx}" title="Delete Paragraph">
                 <i class="fas fa-trash"></i>
               </button>
-              <button class="action-btn-circle small" onclick="openImportModal('paragraph', ${cIdx}, ${pIdx})" title="Import Paragraph">
+              <button class="action-btn-circle small" data-action="import-paragraph" data-c="${cIdx}" data-p="${pIdx}" title="Import Paragraph">
                 <i class="fas fa-file-import"></i>
               </button>
-              <button class="action-btn-circle primary small" onclick="generateSectionsForParagraph(event, ${cIdx}, ${pIdx})" title="Generate Sections">
+              <button class="action-btn-circle primary small" data-action="gen-sections" data-c="${cIdx}" data-p="${pIdx}" title="Generate Sections">
                 <i class="fas fa-wand-magic-sparkles"></i>
               </button>
             </div>
@@ -107,7 +110,7 @@ export function renderTree() {
             const uniqueSectionId = `${cIdx}-${pIdx}-${sIdx}`;
             sDiv.className = 'node section-node';
             sDiv.dataset.uniqueId = uniqueSectionId;
-            sDiv.onclick = () => selectSection(uniqueSectionId);
+            sDiv.addEventListener('click', () => selectSection(uniqueSectionId));
             
             const displayId = section.section_id?.replace(/^B/i, 'S') || `S${sIdx + 1}`;
             const snippet = section.intent || section.adapted_text?.slice(0, 50) || 'Untitled';
@@ -118,7 +121,7 @@ export function renderTree() {
                   <span class="section-text" title="${snippet}">${snippet}</span>
                 </span>
               </div>
-              <button class="delete-btn small" onclick="deleteSection(${cIdx}, ${pIdx}, ${sIdx}); event.stopPropagation();" title="Delete Section">
+              <button class="delete-btn small" data-action="delete-section" data-c="${cIdx}" data-p="${pIdx}" data-s="${sIdx}" title="Delete Section">
                 <i class="fas fa-times"></i>
               </button>
             `;
@@ -138,10 +141,10 @@ export function renderTree() {
     cActionLi.className = 'action-buttons';
     cActionLi.innerHTML = `
       <div class="btn-group">
-        <button class="mini-btn" onclick="openImportModal('chapter', ${cIdx})">
+        <button class="mini-btn" data-action="import-chapter" data-c="${cIdx}">
           <i class="fas fa-file-import"></i> Import Chapter
         </button>
-        <button class="mini-btn btn-primary" onclick="addNewParagraph(${cIdx})">
+        <button class="mini-btn btn-primary" data-action="add-paragraph" data-c="${cIdx}">
           <i class="fas fa-plus"></i> New Paragraph
         </button>
       </div>
@@ -155,17 +158,17 @@ export function renderTree() {
   const rootActionDiv = document.createElement('div');
   rootActionDiv.className = 'tree-actions';
   rootActionDiv.innerHTML = `
-    <button class="mini-btn btn-primary btn-block" onclick="addNewChapter()">
+    <button class="mini-btn btn-primary btn-block" data-action="add-chapter">
       <i class="fas fa-plus"></i> New Chapter
     </button>
     <div class="btn-group">
-      <button class="mini-btn" onclick="openStoryFile()">
+      <button class="mini-btn" data-action="open-story">
         <i class="fas fa-folder-open"></i> Open
       </button>
-      <button class="mini-btn" onclick="saveStoryAs()">
+      <button class="mini-btn" data-action="save-story">
         <i class="fas fa-save"></i> Save
       </button>
-      <button class="mini-btn" onclick="clearStory()">
+      <button class="mini-btn" data-action="clear-story">
         <i class="fas fa-trash"></i> Clear
       </button>
     </div>
@@ -302,6 +305,71 @@ export function deleteSection(cIdx, pIdx, sIdx) {
   paragraph.sections.splice(sIdx, 1);
   renderTree();
   showNotification('Section deleted', 'info');
+}
+
+// 事件委托（可选）：将来可绑定点击到容器而非每个按钮
+export function bindTreeSearch() {
+  const input = $('#treeSearch');
+  if (!input) return;
+  input.addEventListener('input', (e) => {
+    const keyword = e.target.value.toLowerCase();
+    $all('.tree .node').forEach(node => {
+      node.style.display = node.textContent.toLowerCase().includes(keyword) ? '' : 'none';
+    });
+  });
+
+  // 统一按钮事件委托（兼容保留内联 onclick，不影响现有行为）
+  const treeRoot = document.querySelector('.sidebar') || document;
+  treeRoot.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('[data-action]');
+    if (!btn) return;
+    // 已移除 onclick，若仍存在则忽略避免双触发
+    if (btn.hasAttribute('onclick')) return;
+    const action = btn.getAttribute('data-action');
+    const c = parseInt(btn.getAttribute('data-c'));
+    const p = parseInt(btn.getAttribute('data-p'));
+    const s = parseInt(btn.getAttribute('data-s'));
+    switch (action) {
+      case 'add-chapter':
+        window.addNewChapter?.();
+        break;
+      case 'open-story':
+        openStoryFile?.();
+        break;
+      case 'import-story':
+        window.openImportModal?.('story');
+        break;
+      case 'save-story':
+        saveStoryAs?.();
+        break;
+      case 'clear-story':
+        clearStory?.();
+        break;
+      case 'import-chapter':
+        window.openImportModal?.('chapter', isNaN(c) ? null : c);
+        break;
+      case 'add-paragraph':
+        addNewParagraph(c);
+        break;
+      case 'delete-chapter':
+        deleteChapter(c);
+        break;
+      case 'delete-paragraph':
+        deleteParagraph(c, p);
+        break;
+      case 'delete-section':
+        deleteSection(c, p, s);
+        break;
+      case 'import-paragraph':
+        window.openImportModal?.('paragraph', c, p);
+        break;
+      case 'gen-sections':
+        generateSectionsForParagraph?.({ target: btn }, c, p);
+        break;
+      default:
+        break;
+    }
+  });
 }
 
 

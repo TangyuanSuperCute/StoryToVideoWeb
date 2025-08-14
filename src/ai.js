@@ -1,4 +1,6 @@
 import { $, showNotification, safeJsonParse } from './utils.js';
+import { state } from './state.js';
+import { renderTree as renderTreeMod } from './treeRender.js';
 
 export async function disassembleStoryWithAI(storyText, apiKey) {
   const btn = $('#startDisassemble');
@@ -92,7 +94,6 @@ export async function disassembleStoryWithAI(storyText, apiKey) {
             "summary": "<string>",
             "start10": "<string>",
             "end10": "<string>",
-            "raw_text": "<string>"
           }
         ]
       }
@@ -146,4 +147,279 @@ ${storyText}
   }
 }
 
+
+// ============ 段落文本提取（局部工具） ============
+function findParagraphText(fullText, start, end) {
+  if (!fullText || !start || !end) return null;
+  const startIndex = fullText.indexOf(start);
+  if (startIndex === -1) return null;
+  const endIndex = fullText.indexOf(end, startIndex + start.length);
+  if (endIndex === -1) return null;
+  return fullText.substring(startIndex, endIndex + end.length);
+}
+
+// ============ 段落级 Section 生成 ============
+export async function generateSectionsForParagraph(event, cIdx, pIdx) {
+  const apiKey = localStorage.getItem('openRouterApiKey') || prompt('Please enter your OpenRouter API Key:');
+  if (!apiKey) {
+    showNotification('API Key is required to generate sections.', 'error');
+    return;
+  }
+  localStorage.setItem('openRouterApiKey', apiKey);
+
+  const chapter = state.story.chapters[cIdx];
+  const paragraph = chapter?.paragraphs[pIdx];
+
+  const fullStoryText = state.story.meta.original_text;
+  const paragraphText = findParagraphText(fullStoryText, paragraph.start10, paragraph.end10);
+
+  if (!paragraph || !paragraphText) {
+    showNotification('Paragraph data or raw text is missing or could not be found.', 'error');
+    return;
+  }
+
+  // 在生成新内容前，清空旧的sections
+  paragraph.sections = [];
+
+  const paragraphNode = document.querySelector(`.node.with-actions[data-chapter-idx='${cIdx}'][data-paragraph-idx='${pIdx}']`);
+  if (paragraphNode) {
+    paragraphNode.classList.add('generating');
+  }
+
+  // 获取上下文摘要
+  const last_paragraph_summary = chapter.paragraphs[pIdx - 1]?.summary || '';
+  const next_paragraph_summary = chapter.paragraphs[pIdx + 1]?.summary || '';
+
+  const identity = {
+    story_id: state.story.meta.story_id,
+    story_name: state.story.meta.name,
+    chapter_index: cIdx,
+    chapter_title: chapter.meta.chapter_title,
+    paragraph_index: pIdx,
+    paragraph_title: paragraph.meta.paragraph_title,
+    last_paragraph_summary: last_paragraph_summary,
+    paragraph_summary: paragraph.summary,
+    next_paragraph_summary: next_paragraph_summary
+  };
+
+  const adapt = {
+    template_name: "标准",
+    params_override: {}
+  };
+
+  const knowledgeBase = `{
+  "templates": [
+    {
+      "name": "预告片/超宏",
+      "aliases": ["预告片", "超宏", "trailer"],
+      "params": { "style_multiplier": 0.70, "user_density_knob": 0, "compression_preference": 0.80, "dialogue_expansion": 0.20, "action_split": 0.20, "exposition_surfacing": 0.20, "pov_split_strictness": 0.20, "monologue_collapse": 0.70, "min_max_section_len": [40, 120], "salience_threshold": 0.60, "panel_hint_policy": "auto" }
+    },
+    {
+      "name": "电影感",
+      "aliases": ["电影", "film"],
+      "params": { "style_multiplier": 0.85, "user_density_knob": 0, "compression_preference": 0.70, "dialogue_expansion": 0.30, "action_split": 0.40, "exposition_surfacing": 0.30, "pov_split_strictness": 0.30, "monologue_collapse": 0.60, "min_max_section_len": [30, 110], "salience_threshold": 0.55, "panel_hint_policy": "auto" }
+    },
+    {
+      "name": "标准",
+      "aliases": ["default", "standard"],
+      "params": { "style_multiplier": 1.00, "user_density_knob": 0, "compression_preference": 0.50, "dialogue_expansion": 0.50, "action_split": 0.50, "exposition_surfacing": 0.40, "pov_split_strictness": 0.40, "monologue_collapse": 0.50, "min_max_section_len": [24, 90], "salience_threshold": 0.40, "panel_hint_policy": "auto" }
+    },
+    {
+      "name": "电视剧",
+      "aliases": ["剧集", "tv", "drama"],
+      "params": { "style_multiplier": 1.40, "user_density_knob": 0, "compression_preference": 0.30, "dialogue_expansion": 0.70, "action_split": 0.70, "exposition_surfacing": 0.50, "pov_split_strictness": 0.60, "monologue_collapse": 0.40, "min_max_section_len": [22, 80], "salience_threshold": 0.30, "panel_hint_policy": "auto" }
+    },
+    {
+      "name": "漫画分镜",
+      "aliases": ["漫画", "comic", "storyboard"],
+      "params": { "style_multiplier": 1.90, "user_density_knob": 0, "compression_preference": 0.20, "dialogue_expansion": 0.80, "action_split": 0.80, "exposition_surfacing": 0.60, "pov_split_strictness": 0.80, "monologue_collapse": 0.30, "min_max_section_len": [18, 70], "salience_threshold": 0.20, "panel_hint_policy": "auto" }
+    }
+  ],
+  "rules": {
+    "user_density_knob_mapping": { "-2": 0.70, "-1": 0.85, "0": 1.00, "1": 1.25, "2": 1.60 },
+    "base_density_range": [1.2, 4.5],
+    "budget_note": "SectionBudget = ceil( lerp(1.2,4.5,sid_score) * style_multiplier * user_multiplier * max(1, ceil(char_count/1000)) )"
+  }
+}`;
+
+  const finalPrompt = `你是"联合改编引擎（SID + Section Adapter）"。
+
+【总目标】
+在一次调用中完成：
+1) 对输入的小说原文窗口做信息密度打分（产出单一指标 sid_score ∈ [0,1]）。
+2) 基于 sid_score 与用户指定的"改编档位/参数"，将原文改编为若干"故事小节（Story Sections）"。
+3) 输出严格JSON（含 meta 与 sections），后续流程将只依赖这些小节而不再回看原文。
+
+【输入将由用户提供，包含三部分】
+A) <IDENTITY>
+${JSON.stringify(identity, null, 2)}
+</IDENTITY>
+
+B) <ADAPT>
+${JSON.stringify(adapt, null, 2)}
+</ADAPT>
+
+C) <RAW_TEXT>
+${paragraphText}
+</RAW_TEXT>
+
+D) （可选）<KNOWLEDGE_BASE>
+${knowledgeBase}
+</KNOWLEDGE_BASE>
+
+【密度打分（只产出单指标）】
+- 产出 sid_score ∈ [0,1]，保留两位小数。
+- 打分依据：事件密集度、场景切换、对话比例、状态/冲突变化等整体可视化潜力。无需输出各分项，只给总分 sid_score。
+
+【目标小节数（预算）】
+- 先解析"最终参数 final_params"（见下节合并规则），然后计算：
+  base = lerp(1.2, 4.5, sid_score)
+  user_multiplier = map_knob(user_density_knob ∈ [-2..+2] → [0.7,0.85,1.0,1.25,1.6])
+  K = ceil( 原文字符数 / 1000 )
+  SectionBudget = ceil( base * final_params.style_multiplier * user_multiplier * max(1, K) )
+- 允许 |actual_sections - SectionBudget| ≤ 1，超出需合并/细拆回预算附近。
+
+【参数合并规则（得到 final_params）】
+1) 若 ADAPT.template_name 存在：在知识库中查同名或别名的模板，取其参数为"模板参数"。
+2) 若 ADAPT.params_override 存在：以"覆盖方式"应用到模板参数上（相同键以覆盖值为准）。
+3) 若未给 template_name：默认使用模板"标准"。
+4) 若未给 user_density_knob：默认 0。
+5) final_params 的键集合（与知识库一致）：
+   - style_multiplier              (数值)
+   - user_density_knob             (整数 -2..+2)
+   - compression_preference        (0..1)
+   - dialogue_expansion            (0..1)
+   - action_split                  (0..1)
+   - exposition_surfacing          (0..1)
+   - pov_split_strictness          (0..1)
+   - monologue_collapse            (0..1)
+   - min_max_section_len           ([min,max] 字数)
+   - salience_threshold            (0..1)
+   - panel_hint_policy             ("auto" 等，占位；本步不产 panel)
+
+【改编要求（故事小节最小必要信息）】
+- 每个小节必须能独立复述其情节（adapted_text），并覆盖下游生产所需：
+  1) adapted_text：连贯、现在时、三人称、可拍可听，遵守 min_max_section_len。
+  2) intent：一句话说明该节的叙事/情绪目标。
+  3) visuals：
+     - location：场地（可含时段/天气等必要限定）
+     - characters：画面内出现的角色清单（名称或称谓）
+     - props：关键物件清单
+     - visual_message：必须被画面明确表达的要点 2–5 条
+  4) audio：
+     - narration：旁白文本（可直接TTS）
+     - dialogues：按出现顺序排列的台词数组 [{character, line}]
+     - sfx：必要音效清单（简述，如"近景雨声""门轴吱呀"）
+
+【拆并策略（按 final_params 执行）】
+- 若候选 > 预算：按 salience_threshold 合并低显著单元；提高 compression_preference 倾向合并。
+- 若候选 < 预算：按 dialogue_expansion / action_split 拆分长对话与复合动作；exposition_surfacing>0 时将重要环境描写"显影"成节。
+- pov_split_strictness 高：POV 一变即起新节；monologue_collapse 高：独白压缩并并入邻节。
+- 严格执行 min_max_section_len，必要时二次合并/再拆分。
+
+【一致性与完备性】
+- 人名、地名、关键物件命名应在小节文本与 visuals/props 中一致。
+- visuals/characters 与 audio/dialogues 中出现的角色应对应且不缺漏。
+- 禁止引入无根据的新设定或时代冲突。
+
+【输出JSON格式（只允许JSON，无其他文字/标点/Markdown）】
+{
+  "meta": {
+    "story_id": "字符串",
+    "story_name": "字符串",
+    "chapter_index": 整数,
+    "chapter_title": "字符串",
+    "paragraph_index": 整数,
+    "paragraph_title": "字符串",
+    "last_paragraph_summary": "字符串",
+    "paragraph_summary": "字符串",
+    "next_paragraph_summary": "字符串",
+    "template_used": "string",
+    "final_params": { ... }
+  },
+  "evaluation": {
+    "sid_score": number,
+    "section_budget": number,
+    "actual_sections": number
+  },
+  "sections": [
+    {
+      "section_id": "S01",
+      "adapted_text": "string",
+      "intent": "string",
+      "visuals": {
+        "location": "string",
+        "characters": ["string"],
+        "props": ["string"],
+        "visual_message": ["string"]
+      },
+      "audio": {
+        "narration": "string",
+        "dialogues": [ { "character": "string", "line": "string" } ],
+        "sfx": ["string"]
+      }
+    }
+  ]
+}
+
+【输出限制】
+- 仅输出一个JSON对象，必须可被机器解析。
+- 严禁输出解释、注释、占位符或多余文本。
+`;
+
+  const button = event.target.closest('button');
+  if (button) {
+    button.disabled = true;
+    button.innerHTML = `<i class="fas fa-spinner fa-spin"></i>`;
+  }
+
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://tangyuansupercute.github.io/StoryToVideoWeb/",
+        "X-Title": "MaoDie Nebula Story Studio",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-pro-preview",
+        messages: [{ role: "user", content: finalPrompt }],
+        response_format: { "type": "json_object" }
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorData.error?.message || ''}`);
+    }
+
+    const result = await response.json();
+    const jsonString = result.choices[0].message.content;
+    const [parsedJson, parseErr] = safeJsonParse(jsonString);
+    if (parseErr) {
+      throw new Error('AI response was not valid JSON.');
+    }
+
+    if (parsedJson && Array.isArray(parsedJson.sections)) {
+      paragraph.sections = parsedJson.sections;
+      showNotification(`Successfully generated ${parsedJson.sections.length} sections!`, 'success');
+      renderTreeMod();
+    } else {
+      throw new Error('Invalid sections data received from AI.');
+    }
+
+  } catch (error) {
+    showNotification(`Failed to generate sections: ${error.message}`, 'error');
+    console.error('Section Generation Error:', error);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = `<i class="fas fa-wand-magic-sparkles"></i>`;
+    }
+    if (paragraphNode) {
+      paragraphNode.classList.remove('generating');
+    }
+  }
+}
 

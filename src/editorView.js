@@ -1,5 +1,7 @@
 import { state } from './state.js';
 import { $, $all } from './utils.js';
+import { updatePanelSlots } from './panels.js';
+import { highlightActiveNode } from './treeRender.js';
 
 export function selectSection(uniqueId) {
   if (!uniqueId) return;
@@ -13,12 +15,16 @@ export function selectSection(uniqueId) {
   const displaySectionId = section.section_id.replace(/^B/i, 'S');
   $('#editorTitle').innerHTML = `
     <div class="section-id-badge">${displaySectionId}</div>
-    <div class="editable-text section-intent-text" contenteditable="true"
-          onblur="updateSectionIntentFromEditor(this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
-          ${section.intent || 'Untitled'}
-    </div>
+    <div class="editable-text section-intent-text" contenteditable="true">${section.intent || 'Untitled'}</div>
   `;
+  // 绑定编辑事件，替代内联 onblur/onkeydown
+  const intentEl = document.querySelector('.section-intent-text');
+  if (intentEl) {
+    intentEl.addEventListener('blur', () => updateSectionIntentFromEditor(intentEl.textContent));
+    intentEl.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); intentEl.blur(); }
+    });
+  }
   $('#intentText').textContent = section.intent || '';
   $('#adaptedText').textContent = section.adapted_text || '';
   const visuals = section.visuals || {};
@@ -30,6 +36,13 @@ export function selectSection(uniqueId) {
   renderList('#metaNarration', audio.narration ? [audio.narration] : []);
   renderList('#metaDialogues', (audio.dialogues || []).map(d => `${d.character}: ${d.line}`));
   renderList('#metaSfx', audio.sfx || []);
+
+  // 更新画布与高亮树节点
+  updatePanelSlots(section);
+  highlightActiveNode();
+
+  // 高亮右侧全局元信息
+  highlightAndSortGlobalMeta(section);
 }
 
 export function renderList(selector, items) {
@@ -59,6 +72,60 @@ export function updateSectionIntentFromEditor(newIntent) {
         textEl.title = snippet;
       }
     }
+  });
+}
+
+// ============ 高亮和置顶全局元信息 ============
+export function highlightAndSortGlobalMeta(section) {
+  const visuals = section.visuals || {};
+  const audio = section.audio || {};
+  const usedCharacters = new Set(visuals.characters || []);
+  const usedLocations = new Set(visuals.location ? [visuals.location] : []);
+  const usedProps = new Set(visuals.props || []);
+  if (audio.dialogues) {
+    audio.dialogues.forEach(d => { if (d.character) usedCharacters.add(d.character); });
+  }
+  animateSortList('#asideCharacters', usedCharacters);
+  animateSortList('#asideLocations', usedLocations);
+  animateSortList('#asideProps', usedProps);
+}
+
+export function animateSortList(selector, usedSet) {
+  const container = $(selector);
+  if (!container) return;
+  const items = Array.from(container.children);
+  if (items.length === 0) return;
+  const originalPositions = new Map();
+  items.forEach(item => { originalPositions.set(item, item.getBoundingClientRect().top); });
+  const usedItems = []; const unusedItems = [];
+  items.forEach(item => {
+    const value = item.dataset.value || item.textContent;
+    item.classList.remove('meta-item-highlighted', 'meta-item-faded');
+    if (usedSet.has(value)) { usedItems.push(item); item.classList.add('meta-item-highlighted'); }
+    else { unusedItems.push(item); item.classList.add('meta-item-faded'); }
+  });
+  const sortedItems = [...usedItems, ...unusedItems];
+  container.innerHTML = '';
+  sortedItems.forEach(item => container.appendChild(item));
+  sortedItems.forEach(item => {
+    const newTop = item.getBoundingClientRect().top;
+    const deltaY = originalPositions.get(item) - newTop;
+    if (Math.abs(deltaY) > 1) {
+      item.style.transform = `translateY(${deltaY}px)`;
+      item.style.transition = 'none';
+      item.offsetHeight;
+      item.style.transform = '';
+      item.style.transition = 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
+    }
+  });
+  setTimeout(() => { sortedItems.forEach(item => { item.style.transform = ''; item.style.transition = ''; }); }, 400);
+}
+
+export function clearGlobalMetaHighlight() {
+  ['#asideCharacters', '#asideLocations', '#asideProps'].forEach(selector => {
+    const container = $(selector);
+    if (!container) return;
+    Array.from(container.children).forEach(item => item.classList.remove('meta-item-highlighted', 'meta-item-faded'));
   });
 }
 
