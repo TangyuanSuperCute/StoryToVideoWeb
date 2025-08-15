@@ -1,7 +1,7 @@
 import { state } from './state.js';
 import { $, $all, showNotification } from './utils.js';
 import { openStoryFile, saveStoryAs, clearStory } from './fileOps.js';
-import { generateSectionsForParagraph } from './ai.js';
+import { generateSectionsForParagraph, extractGlobalEntitiesForCurrentStory } from './ai.js';
 import { selectSection } from './editorView.js';
 
 // ============ 渲染目录树 ============
@@ -190,20 +190,30 @@ export function highlightActiveNode() {
 
 // ============ 实体统计 ============
 export function updateEntities() {
-  const entities = {
-    characters: new Set(),
-    locations: new Set(),
-    props: new Set()
-  };
-  
-  if (state.story && state.story.chapters) {
+  const entities = { characters: new Set(), locations: new Set(), props: new Set() };
+  const globalEntities = state.story?.meta?.global_entities;
+  if (globalEntities) {
+    (globalEntities.characters || []).forEach(c => {
+      const n = (c?.name || '').trim();
+      if (n) entities.characters.add(n);
+    });
+    (globalEntities.items || []).forEach(i => {
+      const n = (i?.name || '').trim();
+      if (n) entities.props.add(n);
+    });
+    (globalEntities.locations || []).forEach(l => {
+      const n = (l?.name || '').trim();
+      if (n) entities.locations.add(n);
+    });
+  } else if (state.story && state.story.chapters) {
+    // 若无全局抽取结果，严格按照新规范从 subjects 聚合
     state.story.chapters.forEach(chapter => {
       chapter.paragraphs?.forEach(paragraph => {
         paragraph.sections?.forEach(section => {
-          const v = section.visuals || {};
-          (v.characters || []).forEach(c => entities.characters.add(c));
-          if (v.location) entities.locations.add(v.location);
-          (v.props || []).forEach(p => entities.props.add(p));
+          const subjects = section.visuals?.subjects || {};
+          (subjects.characters || []).forEach(c => { const n=(c||'').trim(); if(n) entities.characters.add(n); });
+          (subjects.locations || []).forEach(l => { const n=(l||'').trim(); if(n) entities.locations.add(n); });
+          (subjects.items || []).forEach(p => { const n=(p||'').trim(); if(n) entities.props.add(n); });
         });
       });
     });
@@ -319,7 +329,7 @@ export function bindTreeSearch() {
   });
 
   // 统一按钮事件委托（兼容保留内联 onclick，不影响现有行为）
-  const treeRoot = document.querySelector('.sidebar') || document;
+  const treeRoot = document; // 统一委托到 document，支持右侧与全局按钮
   treeRoot.addEventListener('click', (ev) => {
     const btn = ev.target.closest('[data-action]');
     if (!btn) return;
@@ -365,6 +375,9 @@ export function bindTreeSearch() {
         break;
       case 'gen-sections':
         generateSectionsForParagraph?.({ target: btn }, c, p);
+        break;
+      case 'extract-entities':
+        extractGlobalEntitiesForCurrentStory?.({ target: btn });
         break;
       default:
         break;

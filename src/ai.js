@@ -113,29 +113,40 @@ ${storyText}
 ---
 `;
   try {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://tangyuansupercute.github.io/StoryToVideoWeb/",
-        "X-Title": "MaoDie Nebula Story Studio",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-pro-preview",
-        messages: [ { role: 'user', content: prompt } ],
-        response_format: { type: 'json_object' }
-      })
-    });
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorData.error?.message || ''}`);
-    }
-    const result = await response.json();
-    const jsonString = result.choices[0].message.content;
-    const [parsedJson, parseErr] = safeJsonParse(jsonString);
-    if (parseErr) throw new Error('Failed to parse JSON from AI response.');
+    // 并行：结构拆解 + 全局主体抽取，二者都完成后再进入编辑页
+    const disassemblePromise = (async () => {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://tangyuansupercute.github.io/StoryToVideoWeb/",
+          "X-Title": "MaoDie Nebula Story Studio",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-pro-preview",
+          messages: [ { role: 'user', content: prompt } ],
+          response_format: { type: 'json_object' }
+        })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorData.error?.message || ''}`);
+      }
+      const result = await response.json();
+      const jsonString = result.choices[0].message.content;
+      const [parsedJson, parseErr] = safeJsonParse(jsonString);
+      if (parseErr) throw new Error('Failed to parse JSON from AI response.');
+      return parsedJson;
+    })();
+
+    const entitiesPromise = extractGlobalEntitiesWithAI(storyText, apiKey);
+
+    const [parsedJson, globalEntities] = await Promise.all([disassemblePromise, entitiesPromise]);
+
     parsedJson.story.original_text = storyText;
+    parsedJson.story.global_entities = globalEntities;
+
     localStorage.setItem('aiStory', JSON.stringify(parsedJson));
     window.location.href = 'editor.html';
   } catch (error) {
@@ -151,11 +162,34 @@ ${storyText}
 // ============ 段落文本提取（局部工具） ============
 function findParagraphText(fullText, start, end) {
   if (!fullText || !start || !end) return null;
-  const startIndex = fullText.indexOf(start);
-  if (startIndex === -1) return null;
-  const endIndex = fullText.indexOf(end, startIndex + start.length);
-  if (endIndex === -1) return null;
-  return fullText.substring(startIndex, endIndex + end.length);
+  let best = null;
+  let searchFrom = 0;
+  while (true) {
+    const s = fullText.indexOf(start, searchFrom);
+    if (s === -1) break;
+    const e = fullText.indexOf(end, s + start.length);
+    if (e !== -1) {
+      const candidate = fullText.substring(s, e + end.length);
+      if (!best || candidate.length < best.length) best = candidate;
+    }
+    searchFrom = s + 1;
+  }
+  if (best) return best;
+  // 尝试宽松匹配：使用前缀片段进行定位
+  const sHint = start.slice(0, Math.max(4, Math.min(8, Math.floor(start.length / 2))));
+  const eHint = end.slice(0, Math.max(4, Math.min(8, Math.floor(end.length / 2))));
+  searchFrom = 0;
+  while (true) {
+    const s = fullText.indexOf(sHint, searchFrom);
+    if (s === -1) break;
+    const e = fullText.indexOf(eHint, s + sHint.length);
+    if (e !== -1) {
+      const approx = fullText.substring(s, Math.min(fullText.length, e + end.length));
+      if (!best || approx.length < best.length) best = approx;
+    }
+    searchFrom = s + 1;
+  }
+  return best;
 }
 
 // ============ 段落级 Section 生成 ============
@@ -185,6 +219,9 @@ export async function generateSectionsForParagraph(event, cIdx, pIdx) {
   if (paragraphNode) {
     paragraphNode.classList.add('generating');
   }
+  state.generatingParagraphs = state.generatingParagraphs || [];
+  const genKey = `${cIdx}-${pIdx}`;
+  if (!state.generatingParagraphs.includes(genKey)) state.generatingParagraphs.push(genKey);
 
   // 获取上下文摘要
   const last_paragraph_summary = chapter.paragraphs[pIdx - 1]?.summary || '';
@@ -242,130 +279,104 @@ export async function generateSectionsForParagraph(event, cIdx, pIdx) {
   }
 }`;
 
-  const finalPrompt = `你是"联合改编引擎（SID + Section Adapter）"。
+  // 构造主体名录（E）：从全局抽取结果中收集唯一规范名
+  const roster = {
+    characters: (state.story.meta.global_entities?.characters || []).map(x => ({ name: x.name })).filter(x => x.name),
+    items: (state.story.meta.global_entities?.items || []).map(x => ({ name: x.name })).filter(x => x.name),
+    locations: (state.story.meta.global_entities?.locations || []).map(x => ({ name: x.name })).filter(x => x.name),
+  };
 
-【总目标】
-在一次调用中完成：
-1) 对输入的小说原文窗口做信息密度打分（产出单一指标 sid_score ∈ [0,1]）。
-2) 基于 sid_score 与用户指定的"改编档位/参数"，将原文改编为若干"故事小节（Story Sections）"。
-3) 输出严格JSON（含 meta 与 sections），后续流程将只依赖这些小节而不再回看原文。
+  const rawTextForPrompt = paragraphText || paragraph.summary || paragraph.meta?.paragraph_title || '';
+  if (!paragraphText) {
+    console.warn('[Section Gen] RAW_TEXT fallback to summary/title for', { cIdx, pIdx, start10: paragraph.start10, end10: paragraph.end10 });
+    showNotification('未能在原文中定位该段文本，已使用该段摘要作为输入。', 'info');
+  }
 
-【输入将由用户提供，包含三部分】
-A) <IDENTITY>
+  const finalPrompt = `故事小节生成器
+你是“联合改编引擎”。一次调用内完成：
+(1) 对输入原文窗口生成单一信息密度分数 sid_score∈[0,1]（保留两位小数）。
+(2) 合并改编参数得到 final_params，据此把原文改编为若干“故事小节（Story Sections）”。
+(3) 输出仅一个严格 JSON 对象（含 evaluation 与 sections）。不得输出任何解释、注释或额外文本。
+1.输入契约（严格遵守）
+调用时输入以分段标签提供：
+1.1. A) …（必填，JSON）
 ${JSON.stringify(identity, null, 2)}
-</IDENTITY>
-
-B) <ADAPT>
+1.2. B) …（二选一或并用，JSON）
 ${JSON.stringify(adapt, null, 2)}
-</ADAPT>
-
-C) <RAW_TEXT>
-${paragraphText}
-</RAW_TEXT>
-
-D) （可选）<KNOWLEDGE_BASE>
+1.3. C) <RAW_TEXT>…</RAW_TEXT>（必填，字符串）
+${rawTextForPrompt}
+1.4. D) <KNOWLEDGE_BASE>…</KNOWLEDGE_BASE>（可选，JSON）
 ${knowledgeBase}
-</KNOWLEDGE_BASE>
-
-【密度打分（只产出单指标）】
-- 产出 sid_score ∈ [0,1]，保留两位小数。
-- 打分依据：事件密集度、场景切换、对话比例、状态/冲突变化等整体可视化潜力。无需输出各分项，只给总分 sid_score。
-
-【目标小节数（预算）】
-- 先解析"最终参数 final_params"（见下节合并规则），然后计算：
-  base = lerp(1.2, 4.5, sid_score)
-  user_multiplier = map_knob(user_density_knob ∈ [-2..+2] → [0.7,0.85,1.0,1.25,1.6])
-  K = ceil( 原文字符数 / 1000 )
-  SectionBudget = ceil( base * final_params.style_multiplier * user_multiplier * max(1, K) )
-- 允许 |actual_sections - SectionBudget| ≤ 1，超出需合并/细拆回预算附近。
-
-【参数合并规则（得到 final_params）】
-1) 若 ADAPT.template_name 存在：在知识库中查同名或别名的模板，取其参数为"模板参数"。
-2) 若 ADAPT.params_override 存在：以"覆盖方式"应用到模板参数上（相同键以覆盖值为准）。
-3) 若未给 template_name：默认使用模板"标准"。
-4) 若未给 user_density_knob：默认 0。
-5) final_params 的键集合（与知识库一致）：
-   - style_multiplier              (数值)
-   - user_density_knob             (整数 -2..+2)
-   - compression_preference        (0..1)
-   - dialogue_expansion            (0..1)
-   - action_split                  (0..1)
-   - exposition_surfacing          (0..1)
-   - pov_split_strictness          (0..1)
-   - monologue_collapse            (0..1)
-   - min_max_section_len           ([min,max] 字数)
-   - salience_threshold            (0..1)
-   - panel_hint_policy             ("auto" 等，占位；本步不产 panel)
-
-【改编要求（故事小节最小必要信息）】
-- 每个小节必须能独立复述其情节（adapted_text），并覆盖下游生产所需：
-  1) adapted_text：连贯、现在时、三人称、可拍可听，遵守 min_max_section_len。
-  2) intent：一句话说明该节的叙事/情绪目标。
-  3) visuals：
-     - location：场地（可含时段/天气等必要限定）
-     - characters：画面内出现的角色清单（名称或称谓）
-     - props：关键物件清单
-     - visual_message：必须被画面明确表达的要点 2–5 条
-  4) audio：
-     - narration：旁白文本（可直接TTS）
-     - dialogues：按出现顺序排列的台词数组 [{character, line}]
-     - sfx：必要音效清单（简述，如"近景雨声""门轴吱呀"）
-
-【拆并策略（按 final_params 执行）】
-- 若候选 > 预算：按 salience_threshold 合并低显著单元；提高 compression_preference 倾向合并。
-- 若候选 < 预算：按 dialogue_expansion / action_split 拆分长对话与复合动作；exposition_surfacing>0 时将重要环境描写"显影"成节。
-- pov_split_strictness 高：POV 一变即起新节；monologue_collapse 高：独白压缩并并入邻节。
-- 严格执行 min_max_section_len，必要时二次合并/再拆分。
-
-【一致性与完备性】
-- 人名、地名、关键物件命名应在小节文本与 visuals/props 中一致。
-- visuals/characters 与 audio/dialogues 中出现的角色应对应且不缺漏。
-- 禁止引入无根据的新设定或时代冲突。
-
-【输出JSON格式（只允许JSON，无其他文字/标点/Markdown）】
+1.5. E) …（必填，JSON）
+由调用方预先维护的“主体名录”（唯一、规范名，禁止别名或括号补充）：
+${JSON.stringify(roster, null, 2)}
+2.密度打分（单指标）
+依据事件密集度、场景切换、对话比例、状态或冲突变化、可视化潜力综合评估。
+仅输出 sid_score（两位小数），不输出任何分项。
+3.参数合并 → final_params
+按顺序执行并得出 final_params（键集合固定如下）：
+- style_multiplier (number)
+- user_density_knob (integer ∈ [-2..+2])
+- compression_preference (0..1)
+- dialogue_expansion (0..1)
+- action_split (0..1)
+- exposition_surfacing (0..1)
+- pov_split_strictness (0..1)
+- monologue_collapse (0..1)
+- min_max_section_len ([min,max] 字数)
+- salience_threshold (0..1)
+- panel_hint_policy ("auto" 等；本步不产 panel)
+4.目标小节数（预算）
+4.1. 先计算：
+- base = lerp(1.2, 4.5, sid_score) ；低密→1.2，高密→4.5
+- user_multiplier = map_knob(user_density_knob ∈ [-2..+2] → [0.7, 0.85, 1.0, 1.25, 1.6])
+- K = ceil(原文字符数 / 1000)
+- SectionBudget = ceil(base * final_params.style_multiplier * user_multiplier * max(1, K))
+4.2. 约束：
+- 允许 |actual_sections - SectionBudget| ≤ 1，超出则合并或细拆以回到预算附近。
+- 严格遵守 min_max_section_len，必要时二次合并或再拆分。
+5.改编与拆并策略（执行规则）
+5.1. 文体：adapted_text 全文第三人称、现在时，可拍可听，连贯流畅。
+5.2. 扩缩：当候选数 > 预算时，按 salience_threshold 合并低显著单元；compression_preference 越高越倾向合并并用叙述替代台词或细节。
+5.3. 当候选数 < 预算时，遵循：
+a) dialogue_expansion：把长对话拆节或外显隐含台词；
+b) action_split：把复合动作链拆节；
+c) exposition_surfacing > 0：把关键环境或设定“显影”为独立节；
+d) pov_split_strictness 高：POV 一变即起新节；
+e) monologue_collapse 高：独白压缩并并入邻节。
+6.内置默认知识库（当 <KNOWLEDGE_BASE> 缺省时使用）
+${knowledgeBase}
+7.主体使用与一致性（关键新增要求）
+7.1. 唯一规范名：E) 中的每个主体（人物、物品、场所）只有一个正式名字；禁止括号补充或任何形式的别名。
+7.2. 只用已登记主体：
+a) sections[].visuals.subjects 只能列出来自 E) 的主体；
+b) audio.dialogues[].character 必须是已登记的 characters 之一；
+c) 若原文存在未登记主体，不得发明命名，其信息转由 narration 概述，且不进入 dialogues。
+7.3. 对应不缺漏：visuals.subjects.characters 与 audio.dialogues[].character 集合应一致（允许上镜无台词者只在 visuals.subjects.characters 保留）。
+7.4. 非主体视觉：任何非主体视觉元素不进入 subjects，仅写入 visuals.setting 与 visual_message。
+7.5. 场所选择：每节必须在 visuals.subjects.locations 中明确至少一个场所；visuals.setting 可进一步限定时段、天气。
+7.6. 物品一致：被强调的关键物件仅使用 E).items 中的名称。
+8.输出契约（仅允许一个 JSON 对象）
+8.1. 结构与字段：
 {
-  "meta": {
-    "story_id": "字符串",
-    "story_name": "字符串",
-    "chapter_index": 整数,
-    "chapter_title": "字符串",
-    "paragraph_index": 整数,
-    "paragraph_title": "字符串",
-    "last_paragraph_summary": "字符串",
-    "paragraph_summary": "字符串",
-    "next_paragraph_summary": "字符串",
-    "template_used": "string",
-    "final_params": { ... }
-  },
-  "evaluation": {
-    "sid_score": number,
-    "section_budget": number,
-    "actual_sections": number
-  },
-  "sections": [
-    {
-      "section_id": "S01",
-      "adapted_text": "string",
-      "intent": "string",
-      "visuals": {
-        "location": "string",
-        "characters": ["string"],
-        "props": ["string"],
-        "visual_message": ["string"]
-      },
-      "audio": {
-        "narration": "string",
-        "dialogues": [ { "character": "string", "line": "string" } ],
-        "sfx": ["string"]
-      }
-    }
-  ]
+"evaluation": { "sid_score": 0.00, "section_budget": 0, "actual_sections": 0 },
+"sections": [ { "section_id": "S01", "adapted_text": "string", "intent": "string", "visuals": { "subjects": { "characters": ["string"], "items": ["string"], "locations": ["string"] }, "setting": "string", "visual_message": ["string"] }, "audio": { "narration": "string", "dialogues": [ { "character": "string", "line": "string" } ], "sfx": ["string"] } } ]
 }
-
-【输出限制】
-- 仅输出一个JSON对象，必须可被机器解析。
-- 严禁输出解释、注释、占位符或多余文本。
-`;
+8.2. 硬性约束：
+- actual_sections 与 section_budget 满足 ±1；
+- 每节 adapted_text 遵守 min_max_section_len（超出则拆；不足则合并或补充）；
+- 旁白、台词、视觉三者在主体引用上保持一致；
+- 不得出现未登记主体名；不得出现括号补充名；不得创造时代或设定冲突；
+- 仅输出上述 JSON，不得输出任何其他字符（含空行或注释）。
+9.生成流程（建议执行顺序）
+9.1. 读取并校验 E)，构建“主体白名单”。
+9.2. 评估 sid_score（两位小数）。
+9.3. 合并 final_params。
+9.4. 计算 SectionBudget。
+9.5. 从原文抽取候选叙事单元，依据 final_params 拆并到预算附近。
+9.6. 逐节撰写：adapted_text（第三人称、现在时）、intent、visuals（仅主体加 setting 与 visual_message）、audio（对白仅用白名单角色）。
+9.7. 终检：预算、长度、主体一致性、禁用括号名、JSON 结构与类型正确。
+9.8. 输出唯一 JSON。`;
 
   const button = event.target.closest('button');
   if (button) {
@@ -415,11 +426,263 @@ ${knowledgeBase}
   } finally {
     if (button) {
       button.disabled = false;
-      button.innerHTML = `<i class="fas fa-wand-magic-sparkles"></i>`;
+      button.innerHTML = `<i class=\"fas fa-wand-magic-sparkles\"></i>`;
     }
+    // 仅移除当前完成项的 loading，不影响其他段落
     if (paragraphNode) {
       paragraphNode.classList.remove('generating');
     }
+    state.generatingParagraphs = (state.generatingParagraphs || []).filter(k => k !== genKey);
   }
 }
 
+
+// ============ 全局主体抽取（人物/物品/地点） ============
+export async function extractGlobalEntitiesWithAI(storyText, apiKey) {
+  if (!storyText || !storyText.trim()) {
+    throw new Error('原文为空，无法抽取主体');
+  }
+  const prompt = `你是一名“小说主体抽取器（绘图友好）”。接收一段小说原文后，通读全文，抽取其中的人物、物品、场所三类主体，并输出一个单一 JSON 对象，包含 characters、items、locations 三个列表。除 JSON 外不要输出任何说明或前缀；不要使用代码块标记。
+
+
+
+全局准则
+
+只依据原文，严禁臆测。未知字段可省略或置为 null。
+
+
+
+指代消解：同一主体的本名/别称/代称/描述性称呼须合并，name 用最常见称呼，其他进入 aliases（放在各类的 story 内）。
+
+
+
+精炼优先：每个主体仅保留对剧情或识别最关键的信息。
+
+
+
+语言一致：输出语言与原文保持一致（中文原文→中文输出）。
+
+
+
+relations 规范：
+
+[{ "target": "对方主体名称", "target_type": "character|item|location", "relation": "关系类型", "notes": "可选补充" }]
+
+关系短语示例：亲属/同伴/雇佣/敌对/追逐/保护/威胁/交易/持有/遗失/制造/作者/来源/位于/发生地/前往/线索/隶属。
+
+
+
+视觉描述（用于AI绘图的 visual_prompt）
+
+以逗号分隔的短语编写，聚焦可见/可感细节：体貌、发型/服饰/配件、材质与质感、颜色/花纹、表情与状态、显著伤痕/标记、表面状况（潮湿/蒙尘/破损等）、近距可感环境要素（如“雨滴附着”“霓虹反光”）。
+
+
+
+禁止出现画风与技法词（如“赛璐璐、油画、像素风、写实风、插画风、C4D、Octane、Unreal、PBR”）、构图/镜头/摄影参数（如“广角、俯拍、特写、景深、bokeh、F1.4、三分法、电影感、体素化”）、以及后期/滤镜词。
+
+
+
+控制在8–18个短语；不写句子，不加句号。
+
+
+
+输出格式（JSON 仅示例骨架，真实输出请填充可得字段）
+
+{
+
+"characters": [
+
+{
+
+"name": "主体名称",
+
+"visual_prompt": "逗号分隔的纯视觉短语…",
+
+"story": {
+
+"summary": "≤120字的人物简介，聚焦身份/作用/动机（可省略冗余）",
+
+"aliases": ["别称或代称…"],
+
+"age": "年龄或年龄感（如“中年”）",
+
+"race_or_species": "族属/物种",
+
+"traits": ["关键性格/心理特质…（3-6条）"],
+
+"occupation_or_role": "职业/社会角色",
+
+"affiliation": "组织/阵营（可选）",
+
+"goals_or_motivations": "目标/动机（可选）",
+
+"status": "当前状态（如受伤/在逃/死亡…，可选）",
+
+"last_known_location": "最近出现地点（引用 locations.name，可选）"
+
+},
+
+"relations": [
+
+{ "target": "主体名称", "target_type": "character|item|location", "relation": "关系类型", "notes": "可选" }
+
+]
+
+}
+
+],
+
+"items": [
+
+{
+
+"name": "物品名称",
+
+"visual_prompt": "材质、颜色、质感、形状、状态、标记等的短语…",
+
+"story": {
+
+"summary": "≤120字的物品设定与剧情作用",
+
+"aliases": ["别称/描写性称呼…"],
+
+"category": "类别（武器/文书/器械/照片/神器…）",
+
+"key_properties": ["关键属性（锋利、破损、带血、通电、封印…）"],
+
+"function": "主要用途/能力",
+
+"owner_or_holder": "当前持有者（引用 characters.name）",
+
+"origin_or_source": "来历/来源（可选）",
+
+"status": "状态（完好/损坏/遗失/封存…）",
+
+"last_known_location": "最近出现地点（引用 locations.name，可选）"
+
+},
+
+"relations": [
+
+{ "target": "主体名称", "target_type": "character|item|location", "relation": "关系类型", "notes": "可选" }
+
+]
+
+}
+
+],
+
+"locations": [
+
+{
+
+"name": "地点名称",
+
+"visual_prompt": "空间结构、表面材质、光线/天气、声响/气味、氛围等短语…",
+
+"story": {
+
+"summary": "≤120字的地点功能与剧情作用",
+
+"location_type": "类型（路口/高架/公寓/酒吧/办公室…）",
+
+"notable_features": ["显著要素（红绿灯、霓虹招牌、铁门…）"],
+
+"geography_or_context": "隶属城市/区域/社会语境（可选）",
+
+"function_or_usage": "用途（居住/交易/监控/埋伏…）",
+
+"period_or_time": "时代/时段（夜晚/清晨/某年代，可选）",
+
+"events_here": ["在此发生的重要事件（短语，可选）"]
+
+},
+
+"relations": [
+
+{ "target": "主体名称", "target_type": "character|item|location", "relation": "关系类型", "notes": "可选" }
+
+]
+
+}
+
+]
+
+}
+
+
+
+生成要求（务必遵守）
+
+仅输出上述 JSON 结构，不得添加解释或示例句。
+
+
+
+视觉仅写能被看见/感知的客观要素；设定信息放入 story。
+
+
+
+能省则省：若信息无直接文本依据或对剧情非关键，省略该字段。
+
+
+小说原文如下：
+---
+${storyText}
+---`;
+
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://tangyuansupercute.github.io/StoryToVideoWeb/",
+      "X-Title": "MaoDie Nebula Story Studio",
+    },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-pro-preview",
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' }
+    })
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorData.error?.message || ''}`);
+  }
+  const result = await response.json();
+  const jsonString = result.choices?.[0]?.message?.content || '';
+  const [parsedJson, parseErr] = safeJsonParse(jsonString);
+  if (parseErr) {
+    throw new Error('AI 响应不是合法的 JSON');
+  }
+  return parsedJson;
+}
+
+export async function extractGlobalEntitiesForCurrentStory(event) {
+  try {
+    const apiKey = localStorage.getItem('openRouterApiKey') || prompt('Please enter your OpenRouter API Key:');
+    if (!apiKey) {
+      showNotification('缺少 API Key，无法调用主体抽取', 'error');
+      return;
+    }
+    localStorage.setItem('openRouterApiKey', apiKey);
+    const storyText = state?.story?.meta?.original_text || '';
+    if (!storyText.trim()) {
+      showNotification('未找到故事原文（meta.original_text）', 'error');
+      return;
+    }
+    const btn = event?.target?.closest('button');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+    const entities = await extractGlobalEntitiesWithAI(storyText, apiKey);
+    state.story.meta.global_entities = entities;
+    localStorage.setItem('aiGlobalEntities', JSON.stringify(entities));
+    showNotification('全局主体抽取完成', 'success');
+    // 触发刷新以使右侧全局元信息使用最新数据
+    try { renderTreeMod(); } catch (_) {}
+  } catch (err) {
+    showNotification(`主体抽取失败: ${err.message}`, 'error');
+    console.error('Global Entities Extraction Error:', err);
+  } finally {
+    const btn = event?.target?.closest('button');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i>'; }
+  }
+}

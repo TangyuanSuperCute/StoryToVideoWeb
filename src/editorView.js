@@ -29,9 +29,14 @@ export function selectSection(uniqueId) {
   $('#adaptedText').textContent = section.adapted_text || '';
   const visuals = section.visuals || {};
   const audio = section.audio || {};
-  renderList('#metaCharacters', visuals.characters || []);
-  renderList('#metaProps', visuals.props || []);
-  renderList('#metaLocation', visuals.location ? [visuals.location] : []);
+  // 新规范：仅使用 subjects 结构
+  const subjects = visuals.subjects || {};
+  const characters = (subjects.characters || []).map(s => (s || '').trim()).filter(Boolean);
+  const items = (subjects.items || []).map(s => (s || '').trim()).filter(Boolean);
+  const locations = (subjects.locations || []).map(s => (s || '').trim()).filter(Boolean);
+  renderList('#metaCharacters', characters);
+  renderList('#metaProps', items);
+  renderList('#metaLocation', locations);
   renderList('#metaVisuals', visuals.visual_message || []);
   renderList('#metaNarration', audio.narration ? [audio.narration] : []);
   renderList('#metaDialogues', (audio.dialogues || []).map(d => `${d.character}: ${d.line}`));
@@ -79,9 +84,10 @@ export function updateSectionIntentFromEditor(newIntent) {
 export function highlightAndSortGlobalMeta(section) {
   const visuals = section.visuals || {};
   const audio = section.audio || {};
-  const usedCharacters = new Set(visuals.characters || []);
-  const usedLocations = new Set(visuals.location ? [visuals.location] : []);
-  const usedProps = new Set(visuals.props || []);
+  const subjects = visuals.subjects || {};
+  const usedCharacters = new Set(subjects.characters || []);
+  const usedLocations = new Set(subjects.locations || []);
+  const usedProps = new Set(subjects.items || []);
   if (audio.dialogues) {
     audio.dialogues.forEach(d => { if (d.character) usedCharacters.add(d.character); });
   }

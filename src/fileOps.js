@@ -47,6 +47,7 @@ export async function saveStoryAs() {
     id: state.story.meta.story_id,
     title: state.story.meta.name,
     original_text: state.story.meta.original_text || '',
+    global_entities: state.story.meta.global_entities || undefined,
     chapters: (state.story.chapters || []).map(chapter => {
       const newParagraphs = (chapter.paragraphs || []).map(p => ({
         paragraph_index: p.meta.paragraph_index,

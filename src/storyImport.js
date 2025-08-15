@@ -29,7 +29,8 @@ export function importStory(storyObj) {
       ...(storyData.meta || {}),
       name: storyData.title || storyData.meta?.name || 'Untitled Story',
       story_id: storyData.id || storyData.meta?.story_id || 'new_story',
-      original_text: storyData.original_text || ''
+      original_text: storyData.original_text || '',
+      global_entities: storyData.global_entities || storyData.meta?.global_entities
     },
     chapters: []
   };
