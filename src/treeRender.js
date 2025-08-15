@@ -1,7 +1,7 @@
 import { state } from './state.js';
 import { $, $all, showNotification } from './utils.js';
 import { openStoryFile, saveStoryAs, clearStory } from './fileOps.js';
-import { generateSectionsForParagraph, extractGlobalEntitiesForCurrentStory } from './ai.js';
+import { generateSectionsForParagraph, extractGlobalEntitiesForCurrentStory, generateStoryboardForSection } from './ai.js';
 import { selectSection } from './editorView.js';
 
 // ============ 渲染目录树 ============
@@ -113,7 +113,7 @@ export function renderTree() {
             sDiv.addEventListener('click', () => selectSection(uniqueSectionId));
             
             const displayId = section.section_id?.replace(/^B/i, 'S') || `S${sIdx + 1}`;
-            const snippet = section.intent || section.adapted_text?.slice(0, 50) || 'Untitled';
+            const snippet = section.intent || section.adapted_text?.slice(0, 50) || '未命名';
             sDiv.innerHTML = `
               <div class="section-content">
                 <span class="title">${displayId}</span>
@@ -289,7 +289,7 @@ export function deleteChapter(cIdx) {
     });
   });
   renderTree();
-  showNotification('Chapter deleted', 'info');
+  showNotification('章节已删除', 'info');
 }
 
 export function deleteParagraph(cIdx, pIdx) {
@@ -305,7 +305,7 @@ export function deleteParagraph(cIdx, pIdx) {
     });
   });
   renderTree();
-  showNotification('Paragraph deleted', 'info');
+  showNotification('段落已删除', 'info');
 }
 
 export function deleteSection(cIdx, pIdx, sIdx) {
@@ -314,7 +314,7 @@ export function deleteSection(cIdx, pIdx, sIdx) {
   if (!paragraph) return;
   paragraph.sections.splice(sIdx, 1);
   renderTree();
-  showNotification('Section deleted', 'info');
+  showNotification('分镜小节已删除', 'info');
 }
 
 // 事件委托（可选）：将来可绑定点击到容器而非每个按钮
@@ -376,6 +376,12 @@ export function bindTreeSearch() {
       case 'gen-sections':
         generateSectionsForParagraph?.({ target: btn }, c, p);
         break;
+      case 'gen-storyboard': {
+        const cur = state.currentSection;
+        if (!cur) break;
+        generateStoryboardForSection?.({ target: btn }, cur.cIdx, cur.pIdx, cur.sIdx);
+        break;
+      }
       case 'extract-entities':
         extractGlobalEntitiesForCurrentStory?.({ target: btn });
         break;

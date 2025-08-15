@@ -12,6 +12,7 @@
     --secondary-color: #00f5d4;
     --accent-color: #ff00c1;
     --text-color: #e0e0e0;
+    --muted-color: #a7a9be;
     --dark-surface: rgba(23, 22, 43, 0.7);
     --border-color: rgba(159, 120, 255, 0.3);
     --glow-color: rgba(159, 120, 255, 0.5);
@@ -28,6 +29,10 @@ body {
     background-color: var(--bg-color);
     overflow-x: hidden;
     position: relative;
+}
+h1, h2, h3, h4, h5 { 
+    font-family: var(--title-font); 
+    letter-spacing: .06em; 
 }
 
 /* 背景网格 */
@@ -357,6 +362,133 @@ html {
 .app-container { display: grid; grid-template-columns: 300px 1fr 320px; gap: 0; max-width: 1800px; margin: 0 auto; height: calc(100vh - 70px); }
 
 /* 侧边分镜树 */
+/* ============ 分镜编排（storyboard）样式 ============ */
+.storyboard-editor {
+    border: 1px solid rgba(255, 0, 170, 0.25);
+    background: linear-gradient(180deg, rgba(255,0,170,0.06), rgba(0,0,0,0.0));
+    box-shadow: 0 0 0 1px rgba(255, 0, 170, 0.15) inset, 0 12px 24px rgba(0,0,0,0.25);
+    border-radius: 12px;
+    padding: 16px 16px 20px;
+    margin-bottom: 16px;
+}
+.storyboard-editor .section-header { 
+    display: grid; 
+    grid-template-columns: 1fr auto; 
+    gap: 12px; 
+    align-items: center; 
+}
+.storyboard-editor .section-title { 
+    font-family: var(--title-font); 
+    letter-spacing: .08em; 
+    color: #fff; 
+    text-shadow: 0 0 8px var(--glow-color); 
+}
+.storyboard-editor .section-actions { 
+    display: flex; 
+    gap: 8px; 
+}
+.storyboard-editor .section-actions .mini-btn { 
+    display: inline-flex; 
+    align-items: center; 
+    gap: 6px; 
+}
+.storyboard-container { margin-top: 12px; }
+.sb-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.sb-label { width: 100px; color: var(--muted-color); }
+.sb-input { 
+    flex: 1; 
+    min-width: 0; 
+    padding: 10px 12px; 
+    border: 1px solid var(--border-color); 
+    border-radius: 10px; 
+    background: rgba(0,0,0,0.35); 
+    color: var(--text-color); 
+    outline: none; 
+    transition: border-color .2s ease, box-shadow .2s ease, background .2s ease; 
+}
+.sb-row-2-inputs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+}
+
+.sb-select-wrapper {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+.sb-select-wrapper::after {
+    content: '\\f078';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    color: var(--muted-color);
+    pointer-events: none;
+    transition: color .2s ease;
+}
+.sb-select-wrapper:hover::after {
+    color: var(--primary-color);
+}
+
+select.sb-input { -webkit-appearance: none; appearance: none; padding-right: 30px; }
+.sb-input::placeholder { color: var(--muted-color); }
+.sb-input:focus { 
+    border-color: var(--primary-color); 
+    box-shadow: 0 0 0 2px rgba(159,120,255,.2); 
+    background: rgba(0,0,0,0.45);
+}
+.sb-textarea { 
+    width: 100%; 
+    padding: 10px 12px; 
+    border: 1px solid var(--border-color); 
+    border-radius: 10px; 
+    background: rgba(0,0,0,0.35); 
+    color: var(--text-color); 
+    outline: none; 
+    resize: vertical; 
+    flex: 1;
+    min-width: 0;
+}
+.sb-textarea::placeholder { color: var(--muted-color); }
+.sb-textarea:focus { 
+    border-color: var(--primary-color); 
+    box-shadow: 0 0 0 2px rgba(159,120,255,.2); 
+    background: rgba(0,0,0,0.45);
+}
+.storyboard-editor h4 { 
+    margin-top: 10px; 
+    margin-bottom: 6px; 
+    color: #e8ddff; 
+    text-shadow: 0 0 6px rgba(159,120,255,.6);
+    font-family: var(--title-font);
+}
+.sb-panel-header { 
+    color: #e8ddff; 
+    font-family: var(--title-font);
+}
+.sb-panel { border: 1px dashed rgba(255, 0, 170, 0.3); border-radius: 12px; padding: 12px; margin: 12px 0; background: rgba(255,0,170,0.03); }
+.sb-panel:hover { box-shadow: 0 0 0 1px rgba(255,0,170,0.2) inset, 0 6px 14px rgba(0,0,0,0.25); }
+.sb-panel-header { font-weight: 600; margin-bottom: 6px; }
+.sb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.sb-col { min-width: 0; }
+.sb-subtitle { font-size: 12px; color: var(--muted-color); margin-bottom: 6px; }
+.sb-list { display: flex; flex-direction: column; gap: 6px; }
+.sb-badge { display: inline-block; background: var(--primary); color: #fff; border-radius: 999px; padding: 2px 8px; font-size: 12px; }
+
+/* 面板内图片编辑区（蒸汽波霓虹风格） */
+.sb-panel-grid { display: grid; grid-template-columns: 280px 1fr; gap: 16px; align-items: start; }
+.sb-image { position: relative; }
+.sb-image-wrap { position: relative; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,0,170,0.25) inset, 0 6px 16px rgba(0,0,0,0.25); }
+.sb-image-wrap img { width: 100%; height: 180px; object-fit: cover; display: block; }
+.sb-image-remove { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.5); color: #fff; border: none; border-radius: 999px; padding: 6px 8px; cursor: pointer; }
+.sb-image-placeholder { width: 100%; height: 180px; border: 1px dashed rgba(255,0,170,0.35); color: #ff55aa; background: rgba(255,0,170,0.06); border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: pointer; transition: all .2s ease; }
+.sb-image-placeholder:hover { background: rgba(255,0,170,0.1); box-shadow: 0 0 16px rgba(255,0,170,0.2) inset; }
+.sb-image-placeholder i { font-size: 20px; }
+.sb-form { min-width: 0; }
+
 .sidebar { 
     border-right: 1px solid var(--border-color); 
     height: 100%; 
@@ -417,6 +549,14 @@ html {
     cursor: pointer; 
     box-shadow: 0 1px 2px rgba(0,0,0,.2); 
     transition: all 0.3s ease;
+}
+.btn-primary { 
+    border-color: rgba(159,120,255,.5); 
+    background: linear-gradient(180deg, rgba(159,120,255,.25), rgba(159,120,255,.1)); 
+}
+.btn-primary:hover { 
+    background: linear-gradient(180deg, rgba(159,120,255,.45), rgba(159,120,255,.2)); 
+    box-shadow: 0 0 14px var(--glow-color);
 }
 .mini-btn:hover { 
     background: var(--primary-color);

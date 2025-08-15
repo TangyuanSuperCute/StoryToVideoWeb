@@ -671,7 +671,7 @@ export async function extractGlobalEntitiesForCurrentStory(event) {
       return;
     }
     const btn = event?.target?.closest('button');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 生成中...'; }
     const entities = await extractGlobalEntitiesWithAI(storyText, apiKey);
     state.story.meta.global_entities = entities;
     localStorage.setItem('aiGlobalEntities', JSON.stringify(entities));
@@ -681,6 +681,209 @@ export async function extractGlobalEntitiesForCurrentStory(event) {
   } catch (err) {
     showNotification(`主体抽取失败: ${err.message}`, 'error');
     console.error('Global Entities Extraction Error:', err);
+  } finally {
+    const btn = event?.target?.closest('button');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-magic"></i> 生成分镜'; }
+  }
+}
+
+
+// ============ 分镜生成器（为某个 section 生成分镜 JSON） ============
+/**
+ * 基于给定的 section（故事小节 JSON）生成分镜 JSON（layout_template、panels、audio_prompts）。
+ * 结果将写入：section.storyboard
+ */
+export async function generateStoryboardForSection(event, cIdx, pIdx, sIdx) {
+  try {
+    const apiKey = localStorage.getItem('openRouterApiKey') || prompt('Please enter your OpenRouter API Key:');
+    if (!apiKey) {
+      showNotification('缺少 API Key，无法生成分镜', 'error');
+      return;
+    }
+    localStorage.setItem('openRouterApiKey', apiKey);
+
+    const chapter = state?.story?.chapters?.[cIdx];
+    const section = chapter?.paragraphs?.[pIdx]?.sections?.[sIdx];
+    if (!section) {
+      showNotification('未找到目标 section', 'error');
+      return;
+    }
+
+    const btn = event?.target?.closest('button');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+
+    // 构造严格输入契约所需的最小 JSON（与项目 section 结构保持一致）
+    const subjects = section?.visuals?.subjects || {};
+    const inputSection = {
+      section_id: section.section_id || `C${cIdx}_P${pIdx}_S${sIdx}`,
+      adapted_text: section.adapted_text || '',
+      intent: section.intent || '',
+      visuals: {
+        subjects: {
+          characters: Array.isArray(subjects.characters) ? subjects.characters : [],
+          items: Array.isArray(subjects.items) ? subjects.items : [],
+          locations: Array.isArray(subjects.locations) ? subjects.locations : []
+        },
+        setting: section?.visuals?.setting || '',
+        visual_message: Array.isArray(section?.visuals?.visual_message) ? section.visuals.visual_message : []
+      },
+      audio: {
+        narration: section?.audio?.narration ?? null,
+        dialogues: Array.isArray(section?.audio?.dialogues) ? section.audio.dialogues : [],
+        sfx: Array.isArray(section?.audio?.sfx) ? section.audio.sfx : []
+      }
+    };
+
+    const storyboardPrompt = `
+分镜生成器
+你是“分镜编导引擎”。
+输入是一个 section（故事小节 JSON）；输出是一个分镜 JSON（仅输出一个合法 JSON 对象；禁止任何解释/Markdown/额外文字）。本分镜仅对应该 section。
+
+1.输入契约（section）
+必须包含：
+1.1. section_id（字符串）
+1.2. adapted_text（改编后文本）
+1.3. intent（叙事目标/情绪）
+1.4. visuals.subjects.characters[] | items[] | locations[]（主体名清单）
+1.5. visuals.setting（场景设定）
+1.6. visuals.visual_message[]（需要被视觉化的要点）
+1.7. audio.narration（可空）、audio.dialogues[]、audio.sfx[]
+
+2.输出契约（分镜 JSON，唯一输出）
+仅包含以下三个顶层字段（不得新增其它字段）：
+2.1. layout_template（图片排版模板）
+2.1.1. 可选值：
+- single
+- double_vertical、double_horizontal
+- triple_top_single_bottom_double、triple_top_double_bottom_single
+- quad_grid_2x2
+2.1.2. 选择规则（简述）：
+- 仅一个核心画面 → single
+- 建立场景 + 关键细节/动作 → double_*
+- 1个全景 + 2个互补细节/动作 → triple_*（按叙事先后决定变体）
+- 四个并列要点/时间切片/动作分解 → quad_grid_2x2
+
+2.2. panels（数组；长度与排版模板一致）
+2.2.1. 每个 panel 的结构（不得出现未列出的字段）：
+{
+"panel_index": 0,
+"image_description": {
+  "subject_description": {
+    "characters": [
+      { "variant_id": "string|null", "state_note": "string|null" }
+    ],
+    "items": [
+      { "variant_id": "string|null", "state_note": "string|null" }
+    ]
+  },
+  "visual_description": "English natural-language prompt. It MUST explicitly mention the names of appearing subjects exactly as in the section (so they can be replaced by visual references later). Describe precisely what to render: subjects, their action/state, scene/setting, lighting, environment/time/weather, mood/color. Follow Kontext rules below. If this is a repaint/edit, clearly say 'keep other details unchanged' and 'do not change the composition'. Never propose composition changes for repaint."
+}
+}
+2.2.2. 说明：
+- state_note 仅一句话（如：“fingers slightly trembling”, “coat hem wet”）。
+- 若某类主体不存在，用空数组；variant_id 允许为 null（由下游绑定）。
+- locations 不单列为字段，但应在 visual_description 中用自然语言点名与描述。
+
+2.3. audio_prompts（数组）
+三种其一：
+2.3.1. a) 旁白（voiceover）
+{
+  "type": "voiceover",
+  "description": {
+    "voice_id": "string",
+    "text": "string",
+    "audio_description": "string // 速度/情绪/能量/停连，如：speed 0.9, tense, low energy, slight pauses at periods"
+  }
+}
+2.3.2. b) 人物台词（dialogue）
+{
+  "type": "dialogue",
+  "description": {
+    "voice_id": "string",
+    "text": "string",
+    "audio_description": "string // 速度/情绪/口气等"
+  }
+}
+2.3.3. c) 音效（sfx）
+{
+  "type": "sfx",
+  "description": {
+    "sfx_id": "string|null",
+    "sfx_description": "string // 自然语言：来源/时长/强弱/空间感，如：soft domino click on carpet, 1.0s, near-field"
+  }
+}
+
+3.Kontext（Flux Kontext）英文提示词规范（用于撰写每个 panel 的 visual_description）
+3.1. 语言：自然英文、正向描述；45–120词为宜。尽量通过“说要什么”而非长串排除项实现控制；必要时可在句中简短排除（如 avoid blur/over-saturation）。
+3.2. 主体显式：visual_description 必须点名将要出现的主体（与 section 中主体名完全一致），便于后续替换视觉提示词。
+3.3. 重绘专则：若为重绘/编辑，请明确编辑对象或区域的自然语言定位，并包含 “keep other details unchanged” 与 “do not change the composition”；禁止提出任何改变构图/机位/景别的要求。
+3.4. 信息合并：将动作/状态、场景/道具、光线方向与对比、环境/时间/天气、情绪与色彩走向等信息全部写进同一段 visual_description 中，形成可直接执行的高质量英文指令。
+3.5. 连贯性：多 panel 时，如需延续上一图的光线/色调/位置关系，请在英文描述中自然说明（例：maintain continuity with the previous panel’s lighting and palette）。
+
+4.生成流程（内部）
+4.1. 读取 adapted_text、intent、visuals.visual_message，据此选择 layout_template。
+4.2. 为每个 panel 填写 subject_description 与 visual_description（英文、正向；主体指名；重绘不改构图）。
+4.3. 基于 audio 生成 audio_prompts（voiceover / dialogue / sfx）。
+4.4. 仅输出一个分镜 JSON；键与层级严格按本规范；不包含未定义字段。
+
+5.质量校验
+5.1. 仅输出一个合法 JSON；顶层只含：layout_template、panels、audio_prompts。
+5.2. panels 数量与 layout_template 匹配；每个 visual_description 都点名主体并包含必要环境/光线/情绪信息。
+5.3. 重绘时必须包含“保持其它细节不变、不要改变构图”的语句；不得提出构图变更。
+5.4. state_note 都为一句话；空缺可用 null。
+
+以下是本次输入的 section（严格遵守输入契约）：
+${JSON.stringify(inputSection, null, 2)}
+
+仅输出分镜 JSON（只含 layout_template、panels、audio_prompts）。
+`;
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://tangyuansupercute.github.io/StoryToVideoWeb/',
+        'X-Title': 'MaoDie Nebula Story Studio'
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-pro-preview',
+        messages: [{ role: 'user', content: storyboardPrompt }],
+        response_format: { type: 'json_object' }
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorData.error?.message || ''}`);
+    }
+
+    const result = await response.json();
+    const jsonString = result?.choices?.[0]?.message?.content || '';
+    const [parsedJson, parseErr] = safeJsonParse(jsonString);
+    if (parseErr) {
+      throw new Error('AI 响应不是合法的 JSON');
+    }
+
+    // 轻量校验顶层三个字段
+    if (!parsedJson || typeof parsedJson !== 'object') {
+      throw new Error('分镜结果为空或类型不正确');
+    }
+    const { layout_template, panels, audio_prompts } = parsedJson;
+    if (!layout_template || !Array.isArray(panels) || !Array.isArray(audio_prompts)) {
+      throw new Error('分镜结果缺少必要字段（layout_template/panels/audio_prompts）');
+    }
+
+    // 写回 section
+    section.storyboard = parsedJson;
+
+    // 通知编辑器刷新分镜编辑区
+    try { document.dispatchEvent(new CustomEvent('storyboard-updated')); } catch (_) {}
+
+    showNotification('分镜生成完成', 'success');
+  } catch (err) {
+    showNotification(`分镜生成失败: ${err.message}`, 'error');
+    console.error('Storyboard Generation Error:', err);
   } finally {
     const btn = event?.target?.closest('button');
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i>'; }

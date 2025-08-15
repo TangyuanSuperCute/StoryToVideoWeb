@@ -51,23 +51,17 @@
                     </div>
 
                     <div class="editor-content">
-                        <!-- 主要画面操作区域 -->
-                        <div class="main-canvas-section">
-                            <div class="canvas-header">
-                                <h3><i class="fas fa-image"></i> 小节画面</h3>
-                                <div class="canvas-tools">
-                                    <button class="tool-btn" title="上传图片"><i class="fas fa-upload"></i></button>
-                                    <button class="tool-btn" title="清除"><i class="fas fa-trash"></i></button>
+                        <!-- 分镜编排（置顶） -->
+                        <div class="info-section storyboard-editor">
+                            <div class="section-header">
+                                <h3 class="section-title">分镜编排</h3>
+                                <div class="section-actions">
+                                    <button class="mini-btn btn-primary" data-action="gen-storyboard" title="生成分镜">
+                                        <i class="fas fa-magic"></i> 生成分镜
+                                    </button>
                                 </div>
                             </div>
-                            <div class="canvas-area" id="panelSlots">
-                                <!-- 大画布区域 -->
-                                <div class="canvas-placeholder">
-                                    <i class="fas fa-cloud-upload-alt"></i>
-                                    <p>拖拽图片到此处或点击上传</p>
-                                    <input type="file" accept="image/*" multiple style="display: none;" id="canvasFileInput">
-                                </div>
-                            </div>
+                            <div id="storyboardContainer" class="storyboard-container"></div>
                         </div>
 
                         <!-- 信息面板区域 -->
@@ -109,6 +103,8 @@
                                     </div>
                                 </div>
                             </div>
+
+                            
 
                                             <!-- 音频元信息 -->
                 <div class="info-section audio-meta">
