@@ -126,6 +126,9 @@ function initializeApp() {
       // 搜索功能（委托到模块）
       bindTreeSearchMod();
 
+      // 预加载 ComfyUI 工作流模板
+      import('./src/imageGen.js').then(m => m.preloadComfyWorkflow && m.preloadComfyWorkflow());
+
       // 兜底刷新一次目录
       if (state.story) {
         renderTreeMod();

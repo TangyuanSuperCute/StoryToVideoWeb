@@ -394,7 +394,7 @@ html {
 }
 .storyboard-container { margin-top: 12px; }
 .sb-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
-.sb-label { width: 100px; color: var(--muted-color); }
+.sb-label { width: 100px; color: var(--muted-color); flex-shrink: 0; }
 .sb-input { 
     flex: 1; 
     min-width: 0; 
@@ -408,8 +408,13 @@ html {
 }
 .sb-row-2-inputs {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 8px;
+}
+.sb-row-stacked {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
 }
 
 .sb-select-wrapper {
@@ -418,7 +423,7 @@ html {
     min-width: 0;
 }
 .sb-select-wrapper::after {
-    content: '\\f078';
+    content: '\f078';
     font-family: 'Font Awesome 6 Free';
     font-weight: 900;
     position: absolute;
@@ -434,6 +439,11 @@ html {
 }
 
 select.sb-input { -webkit-appearance: none; appearance: none; padding-right: 30px; }
+select.sb-input option {
+    background: #1c1b33;
+    color: var(--text-color);
+    padding: 8px 12px;
+}
 .sb-input::placeholder { color: var(--muted-color); }
 .sb-input:focus { 
     border-color: var(--primary-color); 
@@ -488,6 +498,85 @@ select.sb-input { -webkit-appearance: none; appearance: none; padding-right: 30p
 .sb-image-placeholder:hover { background: rgba(255,0,170,0.1); box-shadow: 0 0 16px rgba(255,0,170,0.2) inset; }
 .sb-image-placeholder i { font-size: 20px; }
 .sb-form { min-width: 0; }
+
+/* ======= 模板画布（根据 layout_template 渲染） ======= */
+.sb-layout { border: 1px dashed rgba(255, 0, 170, 0.35); border-radius: 12px; padding: 12px; background: rgba(255,0,170,0.03); margin: 12px 0 18px; }
+.sb-layout-inner { display: grid; gap: 10px; width: 100%; aspect-ratio: 9/16; }
+.sb-slot { position: relative; border: 1px solid rgba(255,0,170,0.35); border-radius: 10px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: rgba(255,0,170,0.06); }
+.sb-slot.dragover { outline: 2px solid var(--primary-color); background: rgba(159,120,255,0.15); }
+.sb-slot .sb-image-remove { position: absolute; top: 8px; right: 8px; }
+.sb-slot-img, .sb-slot-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 在占位状态下让按钮更贴近漫画风格 */
+.sb-slot .sb-image-placeholder { width: 100%; height: 100%; border: none; background: repeating-linear-gradient(45deg, rgba(255,0,170,0.06) 0 10px, rgba(255,0,170,0.1) 10px 20px); color: #ff55aa; border-radius: 0; }
+
+/* 多图层容器与图层样式 */
+.sb-slot-layers { position: absolute; inset: 0; overflow: hidden; }
+.sb-layer { position: absolute; left: 50%; top: 50%; transform: translate(calc(-50% + var(--tx, 0px)), calc(-50% + var(--ty, 0px))) scale(var(--scale, 1)) rotate(var(--rotate, 0deg)); cursor: grab; user-select: none; touch-action: none; z-index: var(--z, 1); }
+.sb-layer img { display: block; width: 100%; height: auto; max-width: none; pointer-events: none; }
+.sb-layer.selected { outline: 2px dashed rgba(0,245,212,.6); box-shadow: 0 0 0 2px rgba(0,245,212,.2) inset; }
+
+/* 图层内悬浮工具条 */
+.sb-layer-tools { position: absolute; right: 8px; top: 8px; display: none; gap: 8px; z-index: 3; pointer-events: auto; }
+.sb-layer.selected .sb-layer-tools { display: flex; }
+.sb-layer-tools .grp { display: inline-flex; background: rgba(0,0,0,0.5); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
+.sb-layer:hover .sb-layer-tools { opacity: 1; }
+.sb-tool-btn { background: transparent; border: none; color: #fff; padding: 6px 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; border-right: 1px solid rgba(255,255,255,0.12); }
+.sb-tool-btn:last-child { border-right: none; }
+.sb-tool-btn:hover { background: rgba(159,120,255,0.35); }
+.sb-tool-btn.danger { color: #ff4d6d; }
+.sb-tool-btn.danger:hover { background: #ff4d6d; color: white; }
+
+/* 槽位工具条（层级调整） */
+.sb-slot-tools { position: absolute; left: 8px; top: 8px; display: flex; gap: 6px; z-index: 2; }
+.sb-slot-tools { display:none; }
+
+/* 生图按钮 */
+.sb-gen-btn {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    z-index: 3;
+}
+.sb-gen-btn:hover { background: var(--primary-color); border-color: var(--primary-color); }
+
+/* 交互手柄：四角缩放 + 旋转手柄 */
+.sb-handles { position: absolute; inset: 0; pointer-events: none; display: none; }
+.sb-layer.selected .sb-handles { display: block; }
+.sb-handle { position: absolute; width: 12px; height: 12px; border: 2px solid #fff; background: rgba(0,0,0,0.4); border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.3); pointer-events: auto; cursor: nwse-resize; }
+.sb-handle.tl { left: -6px; top: -6px; cursor: nwse-resize; }
+.sb-handle.tr { right: -6px; top: -6px; cursor: nesw-resize; }
+.sb-handle.bl { left: -6px; bottom: -6px; cursor: nesw-resize; }
+.sb-handle.br { right: -6px; bottom: -6px; cursor: nwse-resize; }
+.sb-rotate { position: absolute; left: 50%; top: -28px; transform: translateX(-50%); pointer-events: auto; }
+.sb-rotate .dot { width: 12px; height: 12px; border: 2px solid #fff; background: rgba(0,0,0,0.4); border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.3); cursor: grab; }
+.sb-rotate .dot { cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="white" d="M12 2v3l4-4l-4-4v3C6.48 0 2 4.48 2 10c0 2.21.72 4.24 1.94 5.9l1.46-1.46A7 7 0 0 1 5 10c0-3.86 3.14-7 7-7m7.06 3.1l-1.46 1.46A7 7 0 0 1 19 10c0 3.86-3.14 7-7 7v-3l-4 4l4 4v-3c5.52 0 10-4.48 10-10c0-2.21-.72-4.24-1.94-5.9"/></svg>') 16 16, grab; }
+.sb-rotate::before { content: ''; position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 2px; height: 16px; background: rgba(255,255,255,0.6); }
+
+/* 单图 */
+.sb-layout-single .sb-layout-inner { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+
+/* 纵向（vertical）上下各半 */
+.sb-layout-double_vertical .sb-layout-inner { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+
+/* 横向（horizontal）左右各半 */
+.sb-layout-double_horizontal .sb-layout-inner { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
+
+/* 上单下双 顶部全景，底部两格略高 */
+.sb-layout-triple_top_single_bottom_double .sb-layout-inner { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.sb-layout-triple_top_single_bottom_double .sb-slot:nth-child(1) { grid-column: 1 / -1; }
+
+/* 上双下单 底部跨栏为情绪大格 */
+.sb-layout-triple_top_double_bottom_single .sb-layout-inner { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.sb-layout-triple_top_double_bottom_single .sb-slot:nth-child(3) { grid-column: 1 / -1; }
+
+/* 四宫格 2*2，留出更紧凑的 gutter */
+.sb-layout-quad_grid_2x2 .sb-layout-inner { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 8px; }
 
 .sidebar { 
     border-right: 1px solid var(--border-color); 
@@ -1941,6 +2030,23 @@ select.sb-input { -webkit-appearance: none; appearance: none; padding-right: 30p
     transform: scale(1.05);
     box-shadow: 0 0 25px var(--glow-color);
 }
+
+/* 生图弹窗布局 */
+.imggen-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.imggen-left { background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 10px; padding: 0; display: grid; }
+#imgGenPreview { width: 100%; height: auto; background: #fff; border-radius: 8px; display: block; }
+.imggen-hint { color: #9ca3af; font-size: 12px; }
+.imggen-right { display: flex; flex-direction: column; gap: 8px; }
+.imggen-candidates { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.imggen-candidates .cand { border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: rgba(0,0,0,0.25); cursor: pointer; }
+.imggen-candidates .cand img { width: 100%; height: 100px; object-fit: cover; display: block; }
+.imggen-candidates .cand.active { outline: 2px solid var(--secondary-color); }
+
+/* 编辑区右侧/底部候选列表容器 */
+.sb-candidates-panel { border: 1px dashed rgba(255,0,170,0.35); border-radius: 12px; padding: 10px; background: rgba(255,0,170,0.03); margin-top: 10px; }
+.sb-cand-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.sb-cand { border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: rgba(0,0,0,0.25); cursor: pointer; }
+.sb-cand img { width: 100%; height: 100px; object-fit: cover; display: block; }
 
 /* 响应式 */
 /* 响应式布局调整 */

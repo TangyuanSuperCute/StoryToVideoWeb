@@ -55,11 +55,6 @@
                         <div class="info-section storyboard-editor">
                             <div class="section-header">
                                 <h3 class="section-title">分镜编排</h3>
-                                <div class="section-actions">
-                                    <button class="mini-btn btn-primary" data-action="gen-storyboard" title="生成分镜">
-                                        <i class="fas fa-magic"></i> 生成分镜
-                                    </button>
-                                </div>
                             </div>
                             <div id="storyboardContainer" class="storyboard-container"></div>
                         </div>
@@ -199,6 +194,51 @@
             </div>
             <div class="modal-footer">
                 <button id="entitiesOk" class="btn btn-primary">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 生图弹窗 -->
+    <div id="imgGenModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>生图生成</h3>
+                <button id="imgGenClose" class="icon-btn"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="imggen-grid">
+                    <div class="imggen-left">
+                        <canvas id="imgGenPreview" width="1024" height="1024"></canvas>
+                        <div class="imggen-hint">当前槽位的图层将被合成到白色底图上作为参考上传</div>
+                    </div>
+                    <div class="imggen-right">
+                        <div class="sb-row">
+                            <label class="sb-label">服务器</label>
+                            <input id="imgGenServer" class="sb-input" placeholder="ComfyUI 服务器地址" />
+                        </div>
+                        <div class="sb-row">
+                            <label class="sb-label">保存到</label>
+                            <button id="chooseLocalDir" class="mini-btn">选择本地文件夹</button>
+                            <input id="imgGenLocalDirLabel" class="sb-input" placeholder="未选择" disabled />
+                        </div>
+                        <div class="sb-row">
+                            <label class="sb-label">宽/高</label>
+                            <input id="imgGenWidth" type="number" class="sb-input" value="1024" style="max-width:140px" />
+                            <input id="imgGenHeight" type="number" class="sb-input" value="1024" style="max-width:140px" />
+                        </div>
+                        <div class="sb-row sb-row-stacked">
+                            <label class="sb-label">提示词</label>
+                            <textarea id="imgGenPrompt" class="sb-textarea" rows="4" placeholder="可选：补充说明（不会覆盖分镜文案，仅作附加）"></textarea>
+                        </div>
+                        <div class="sb-row sb-row-stacked">
+                            <label class="sb-label">候选</label>
+                            <div id="imgGenCandidates" class="imggen-candidates"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="imgGenGenerate" class="btn btn-primary-modal">生成</button>
             </div>
         </div>
     </div>

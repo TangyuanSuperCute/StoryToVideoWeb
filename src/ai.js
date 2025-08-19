@@ -711,6 +711,9 @@ export async function generateStoryboardForSection(event, cIdx, pIdx, sIdx) {
 
     const btn = event?.target?.closest('button');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+    // 仅标记当前 section 在生成，避免其它 section 的按钮一并变化
+    const key = `${cIdx}-${pIdx}-${sIdx}`;
+    if (!state.generatingStoryboards.includes(key)) state.generatingStoryboards.push(key);
 
     // 构造严格输入契约所需的最小 JSON（与项目 section 结构保持一致）
     const subjects = section?.visuals?.subjects || {};
@@ -754,8 +757,9 @@ export async function generateStoryboardForSection(event, cIdx, pIdx, sIdx) {
 2.1. layout_template（图片排版模板）
 2.1.1. 可选值：
 - single
-- double_vertical、double_horizontal
-- triple_top_single_bottom_double、triple_top_double_bottom_single
+- double_vertical
+- triple_top_single_bottom_double
+- triple_top_double_bottom_single
 - quad_grid_2x2
 2.1.2. 选择规则（简述）：
 - 仅一个核心画面 → single
@@ -774,7 +778,8 @@ export async function generateStoryboardForSection(event, cIdx, pIdx, sIdx) {
     ],
     "items": [
       { "variant_id": "string|null", "state_note": "string|null" }
-    ]
+    ],
+    "locations":  [ { "name": "string", "state_note": "string|null" } ]
   },
   "visual_description": "English natural-language prompt. It MUST explicitly mention the names of appearing subjects exactly as in the section (so they can be replaced by visual references later). Describe precisely what to render: subjects, their action/state, scene/setting, lighting, environment/time/weather, mood/color. Follow Kontext rules below. If this is a repaint/edit, clearly say 'keep other details unchanged' and 'do not change the composition'. Never propose composition changes for repaint."
 }
@@ -887,5 +892,9 @@ ${JSON.stringify(inputSection, null, 2)}
   } finally {
     const btn = event?.target?.closest('button');
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i>'; }
+    // 移除当前键
+    state.generatingStoryboards = (state.generatingStoryboards || []).filter(k => k !== `${cIdx}-${pIdx}-${sIdx}`);
+    // 触发一次刷新，确保按钮根据最新状态重绘
+    try { document.dispatchEvent(new CustomEvent('storyboard-updated')); } catch (_) {}
   }
 }
