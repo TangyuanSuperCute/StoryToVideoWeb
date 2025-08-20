@@ -202,7 +202,7 @@
     <div id="imgGenModal" class="modal hidden">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>生图生成</h3>
+                <h3>插图生成</h3>
                 <button id="imgGenClose" class="icon-btn"><i class="fas fa-times"></i></button>
             </div>
             <div class="modal-body">
@@ -212,7 +212,7 @@
                         <div class="imggen-hint">当前槽位的图层将被合成到白色底图上作为参考上传</div>
                     </div>
                     <div class="imggen-right">
-                        <div class="sb-row">
+                        <div class="sb-row" style="display:none">
                             <label class="sb-label">服务器</label>
                             <input id="imgGenServer" class="sb-input" placeholder="ComfyUI 服务器地址" />
                         </div>
@@ -221,18 +221,14 @@
                             <button id="chooseLocalDir" class="mini-btn">选择本地文件夹</button>
                             <input id="imgGenLocalDirLabel" class="sb-input" placeholder="未选择" disabled />
                         </div>
-                        <div class="sb-row">
+                        <div class="sb-row" style="display:none">
                             <label class="sb-label">宽/高</label>
                             <input id="imgGenWidth" type="number" class="sb-input" value="1024" style="max-width:140px" />
                             <input id="imgGenHeight" type="number" class="sb-input" value="1024" style="max-width:140px" />
                         </div>
-                        <div class="sb-row sb-row-stacked">
+                        <div class="sb-row sb-row-stacked imggen-prompt">
                             <label class="sb-label">提示词</label>
-                            <textarea id="imgGenPrompt" class="sb-textarea" rows="4" placeholder="可选：补充说明（不会覆盖分镜文案，仅作附加）"></textarea>
-                        </div>
-                        <div class="sb-row sb-row-stacked">
-                            <label class="sb-label">候选</label>
-                            <div id="imgGenCandidates" class="imggen-candidates"></div>
+                            <textarea id="imgGenPrompt" class="sb-textarea" rows="10" placeholder="可选：补充说明（不会覆盖分镜文案，仅作附加）"></textarea>
                         </div>
                     </div>
                 </div>

@@ -126,8 +126,7 @@ function initializeApp() {
       // 搜索功能（委托到模块）
       bindTreeSearchMod();
 
-      // 预加载 ComfyUI 工作流模板
-      import('./src/imageGen.js').then(m => m.preloadComfyWorkflow && m.preloadComfyWorkflow());
+      // 已改为使用 context-reference 接口，不再强制预加载工作流模板，避免中文文件名在某些服务器下 404
 
       // 兜底刷新一次目录
       if (state.story) {

@@ -2032,11 +2032,17 @@ select.sb-input option {
 }
 
 /* 生图弹窗布局 */
-.imggen-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.imggen-left { background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 10px; padding: 0; display: grid; }
-#imgGenPreview { width: 100%; height: auto; background: #fff; border-radius: 8px; display: block; }
+.imggen-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; align-items: stretch; }
+.imggen-left { background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px; display: grid; gap: 10px; }
+#imgGenPreview { width: 100%; height: auto; background: #fff; border-radius: 8px; display: block; box-shadow: 0 0 0 1px rgba(255,255,255,0.05) inset; }
 .imggen-hint { color: #9ca3af; font-size: 12px; }
-.imggen-right { display: flex; flex-direction: column; gap: 8px; }
+.imggen-right { display: flex; flex-direction: column; gap: 14px; }
+.imggen-right .sb-row { align-items: center; }
+.imggen-right .sb-label { width: 64px; }
+.imggen-right .mini-btn { margin-top: 0; }
+.imggen-right #imgGenLocalDirLabel { flex: 1; }
+.imggen-prompt { flex: 1; display: flex; flex-direction: column; }
+.imggen-prompt .sb-textarea { flex: 1; min-height: 0; }
 .imggen-candidates { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
 .imggen-candidates .cand { border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: rgba(0,0,0,0.25); cursor: pointer; }
 .imggen-candidates .cand img { width: 100%; height: 100px; object-fit: cover; display: block; }
@@ -2047,6 +2053,15 @@ select.sb-input option {
 .sb-cand-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
 .sb-cand { border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: rgba(0,0,0,0.25); cursor: pointer; }
 .sb-cand img { width: 100%; height: 100px; object-fit: cover; display: block; }
+
+/* 将候选浮层放在画布内部底部 */
+.sb-layout { position: relative; }
+.sb-candidates-overlay {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 10px;
+  background: linear-gradient(0deg, rgba(13,12,29,0.85), rgba(13,12,29,0.0));
+}
 
 /* 响应式 */
 /* 响应式布局调整 */
